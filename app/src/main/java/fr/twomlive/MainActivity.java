@@ -8,6 +8,9 @@ import android.net.VpnService;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -25,7 +28,11 @@ public class MainActivity extends Activity implements GameState.Listener {
     private static final int MAX_LINES = 300;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private final ArrayDeque<String> shown = new ArrayDeque<>();
+    private final ArrayDeque<GameState.Line> shown = new ArrayDeque<>();
+
+    // vert = recu du serveur, bleu = envoye par le telephone, rouge = drop, gris = messages de l'appli
+    private static final int[] COLORS = {
+            Color.rgb(46, 125, 50), Color.rgb(21, 101, 192), Color.rgb(198, 40, 40), Color.rgb(110, 110, 110)};
     private Button toggle;
     private TextView mobs, log;
     private ScrollView logScroll;
@@ -136,7 +143,7 @@ public class MainActivity extends Activity implements GameState.Listener {
         GameState gs = GameState.INSTANCE;
         gs.addListener(this);
         shown.clear();
-        List<String> l = gs.lines();
+        List<GameState.Line> l = gs.entries();
         for (int i = Math.max(0, l.size() - MAX_LINES); i < l.size(); i++) shown.add(l.get(i));
         renderLog();
         mobs.setText(gs.mobsSummary());
@@ -174,19 +181,26 @@ public class MainActivity extends Activity implements GameState.Listener {
         }
     }
 
+    private static CharSequence colored(String text, int kind) {
+        SpannableStringBuilder sb = new SpannableStringBuilder(text);
+        sb.append('\n');
+        sb.setSpan(new ForegroundColorSpan(COLORS[kind]), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return sb;
+    }
+
     private void renderLog() {
-        StringBuilder sb = new StringBuilder();
-        for (String s : shown) sb.append(s).append('\n');
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        for (GameState.Line l : shown) sb.append(colored(l.text, l.kind));
         log.setText(sb);
         logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
     }
 
     @Override
-    public void onEvent(String line) {
+    public void onEvent(String line, int kind) {
         ui.post(() -> {
-            shown.add(line);
+            shown.add(new GameState.Line(line, kind));
             while (shown.size() > MAX_LINES) shown.removeFirst();
-            log.append(line + "\n");
+            log.append(colored(line, kind));
             if (shown.size() >= MAX_LINES && log.getLineCount() > MAX_LINES + 50) renderLog();
             else logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
             refreshToggle();

@@ -120,19 +120,33 @@ public final class TwomDecoder {
     static {
         for (int op : new int[]{0x27, 0x43, 0x4f, 0x68, 0x69, 0x7e, 0xa8}) C2S_OPS[op] = true;
     }
-    /** remplissage constant des messages d'attaque (0x4f), une fois dechiffre */
-    static final byte[] FILL = {0x61, 0x3c, (byte) 0xe2, 0x37};
-
     static byte[] decR(byte[] p, int k, int r) {
         byte[] o = new byte[p.length];
         for (int i = 0; i < p.length; i++) o[i] = (byte) rotr((p[i] & 0xff) ^ k, r);
         return o;
     }
 
-    static boolean containsFill(byte[] x, int from, int to) {
-        for (int i = from; i + 4 <= Math.min(to, x.length); i++)
-            if (x[i] == FILL[0] && x[i + 1] == FILL[1] && x[i + 2] == FILL[2] && x[i + 3] == FILL[3]) return true;
-        return false;
+    /** le message d'attaque (0x4f) se termine par un long remplissage : un motif de 4 octets repete */
+    static boolean periodic4(byte[] p) {
+        if (p.length < 200) return false;
+        int same = 0, n = 0;
+        for (int i = p.length / 2; i < p.length - 1; i++) {
+            n++;
+            if (p[i] == p[i - 4]) same++;
+        }
+        return same > n * 8 / 10;
+    }
+
+    /** cle d'une trame d'attaque : donne 0x4f et des zeros dans l'en-tete (octets bruts = cle) */
+    static int attackKey(byte[] p) {
+        int best = -1, bestScore = 0;
+        for (int k = 0; k < 256; k++) {
+            if (rotr((p[0] & 0xff) ^ k, rotFor(k)) != 0x4f) continue;
+            int score = 0;
+            for (int i = 1; i < 13 && i < p.length; i++) if ((p[i] & 0xff) == k) score++;
+            if (score > bestScore) { bestScore = score; best = k; }
+        }
+        return best;
     }
 
     /**
@@ -142,15 +156,11 @@ public final class TwomDecoder {
      */
     public static byte[] decodeClientFrame(byte[] p) {
         if (p.length <= 2) return null;
-        if (p.length > 1000) {                       // attaque : en-tete + ~2 Ko de remplissage
-            for (int k = 0; k < 256; k++) {
-                int r = rotFor(k);
-                if (rotr((p[0] & 0xff) ^ k, r) != 0x4f) continue;
-                byte[] part = decR(sub(p, 100, 140), k, r);
-                if (containsFill(part, 0, part.length)) {
-                    byte[] x = decR(p, k, r);
-                    return sub(x, 0, x.length - 1);
-                }
+        if (periodic4(p)) {                          // attaque : en-tete + ~2 Ko de remplissage
+            int k = attackKey(p);
+            if (k >= 0) {
+                byte[] x = dec(p, k);
+                return sub(x, 0, x.length - 1);
             }
         }
         int k0 = guessKey(p);

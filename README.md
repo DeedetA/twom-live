@@ -26,6 +26,8 @@ de TWOM telles quelles et lit au passage le flux du serveur de jeu.
 - **Chat** : affiche ou masque les messages du chat.
 - **Envoyés** : affiche ce que ton téléphone envoie (attaques 🗡, compétences ✨).
 - **Détails** : ajoute les déplacements des mobs, les coups portés et les joueurs en vue.
+- **Couleurs du journal** : vert = reçu du serveur, bleu = envoyé par ton téléphone,
+  rouge = drop (or au sol et ramassé), gris = messages de l'appli.
 - **Partager (CSV)** : envoie le journal des événements (morts, apparitions, or) au format CSV.
 
 Seul TWOM passe par le VPN local ; le reste du téléphone n'est pas concerné.

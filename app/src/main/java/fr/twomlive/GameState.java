@@ -15,7 +15,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class GameState {
 
     public interface Listener {
-        void onEvent(String line);
+        void onEvent(String line, int kind);
         void onMobsChanged();
     }
 
@@ -29,7 +29,16 @@ public final class GameState {
     private final Map<String, TwomDecoder.Entity> ents = new HashMap<>();
     private final Map<String, TwomDecoder.Entity> mobs = new LinkedHashMap<>();
     private final Map<String, Map<String, Integer>> hits = new HashMap<>();
-    private final List<String> lines = new ArrayList<>();
+    /** categories de lignes du journal (pour les couleurs) */
+    public static final int RECU = 0, ENVOYE = 1, DROP = 2, SYSTEME = 3;
+
+    public static final class Line {
+        public final String text;
+        public final int kind;
+        public Line(String text, int kind) { this.text = text; this.kind = kind; }
+    }
+
+    private final List<Line> lines = new ArrayList<>();
     private final StringBuilder csv = new StringBuilder("heure;evenement;id;nom;niveau;x;y;detail\n");
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss", Locale.FRANCE);
@@ -38,7 +47,22 @@ public final class GameState {
     public void addListener(Listener l) { listeners.add(l); }
     public void removeListener(Listener l) { listeners.remove(l); }
 
-    public synchronized List<String> lines() { return new ArrayList<>(lines); }
+    public synchronized List<String> lines() {
+        List<String> o = new ArrayList<>();
+        for (Line l : lines) o.add(l.text);
+        return o;
+    }
+
+    public synchronized List<Line> entries() { return new ArrayList<>(lines); }
+
+    static int kindOf(String icon) {
+        switch (icon) {
+            case "🗡": case "✨": case "📤": case "👣": return ENVOYE;
+            case "💰": case "🪙": return DROP;
+            case "ℹ️": case "🔧": case "🔌": return SYSTEME;
+            default: return RECU;
+        }
+    }
     public synchronized String csv() { return csv.toString(); }
     public synchronized Map<String, TwomDecoder.Entity> knownIds() { return new HashMap<>(ents); }
 
@@ -65,8 +89,9 @@ public final class GameState {
     private void log(String icon, String text, Object[] ev) {
         String h = fmt.format(new Date());
         String line = "[" + h + "] " + icon + " " + text;
+        int kind = kindOf(icon);
         synchronized (this) {
-            lines.add(line);
+            lines.add(new Line(line, kind));
             if (lines.size() > 600) lines.remove(0);
             if (ev != null) {
                 csv.append(h);
@@ -74,7 +99,7 @@ public final class GameState {
                 csv.append('\n');
             }
         }
-        for (Listener l : listeners) l.onEvent(line);
+        for (Listener l : listeners) l.onEvent(line, kind);
     }
 
     private void mobsChanged() { for (Listener l : listeners) l.onMobsChanged(); }
@@ -196,7 +221,7 @@ public final class GameState {
                     if (showChat) {
                         String[] c = TwomDecoder.parseChat(m);
                         if (c == null) break;
-                        if (c[0].startsWith("TXT_ENCHANT_SUCCESS")) log("✨", c[1] + " a réussi un enchantement", null);
+                        if (c[0].startsWith("TXT_ENCHANT_SUCCESS")) log("🌟", c[1] + " a réussi un enchantement", null);
                         else if (!c[0].startsWith("TXT_") && !c[1].startsWith("TXT_"))
                             log("💬", c[0].isEmpty() ? c[1] : c[0] + ": " + c[1], null);
                     }

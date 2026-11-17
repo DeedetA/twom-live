@@ -89,6 +89,41 @@ public class DecoderTest {
         assertEquals(42, base);
     }
 
+    static byte[] encrypt(byte[] plain, int k) {
+        int r = TwomDecoder.rotFor(k);
+        byte[] o = new byte[plain.length];
+        for (int i = 0; i < plain.length; i++) {
+            int b = plain[i] & 0xff;
+            o[i] = (byte) ((((b << r) | (b >>> (8 - r))) & 0xff) ^ k);
+        }
+        return o;
+    }
+
+    @Test
+    public void reconnaitLesAttaquesQuelQueSoitLeRemplissage() throws Exception {
+        // une vraie attaque de la session de farm, dont on change le remplissage et la cle
+        byte[] cli = resource("/capture2_c2s.bin");
+        byte[] attack = null;
+        for (int i = 0; i + 2 <= cli.length; ) {
+            int L = ((cli[i] & 0xff) << 8) | (cli[i + 1] & 0xff);
+            byte[] f = TwomDecoder.sub(cli, i + 2, i + L);
+            if (f.length > 1000) { attack = TwomDecoder.decodeClientFrame(f); break; }
+            i += L;
+        }
+        assertNotNull(attack);
+        assertEquals(0x4f, attack[0] & 0xff);
+        byte[] plain = new byte[attack.length + 1];
+        System.arraycopy(attack, 0, plain, 0, attack.length);
+        byte[] fill = {0x11, 0x22, 0x33, 0x44};
+        for (int i = 20; i < attack.length; i++) plain[i] = fill[i % 4];   // autre remplissage
+        for (int k : new int[]{0x5d, 0xa3, 0x08, 0xf7}) {
+            byte[] back = TwomDecoder.decodeClientFrame(encrypt(plain, k));
+            assertNotNull(back);
+            assertEquals("cle " + k, 0x4f, back[0] & 0xff);
+            assertArrayEquals(TwomDecoder.sub(plain, 0, 20), TwomDecoder.sub(back, 0, 20));
+        }
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();
