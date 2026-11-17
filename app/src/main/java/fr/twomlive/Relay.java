@@ -170,7 +170,7 @@ public final class Relay {
             try {
                 relay();
             } catch (RuntimeException e) {
-                if (r.gs != null) r.gs.debug("Erreur relais " + ip(srvIp) + ":" + srvPort + " : " + e);
+                if (r.gs != null) r.gs.debug("Relay error " + ip(srvIp) + ":" + srvPort + ": " + e);
                 close(true);
             }
         }
@@ -184,11 +184,11 @@ public final class Relay {
                 c.socket().connect(new InetSocketAddress(InetAddress.getByAddress(srvIp), srvPort), 15000);
                 ch = c;
             } catch (IOException e) {
-                if (r.gs != null) r.gs.debug("Connexion impossible vers " + dest + " : " + e.getMessage());
+                if (r.gs != null) r.gs.debug("Cannot connect to " + dest + ": " + e.getMessage());
                 close(true);
                 return;
             }
-            if (r.gs != null) r.gs.debug("Connexion relayée vers " + dest);
+            if (r.gs != null) r.gs.debug("Relayed connection to " + dest);
             synchronized (this) {
                 if (closed) return;
                 Seg sa = new Seg(sndNxt, new byte[0], Packets.SYN | Packets.ACK);

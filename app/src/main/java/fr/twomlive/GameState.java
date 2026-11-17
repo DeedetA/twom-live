@@ -39,9 +39,9 @@ public final class GameState {
     }
 
     private final List<Line> lines = new ArrayList<>();
-    private final StringBuilder csv = new StringBuilder("heure;evenement;id;nom;niveau;x;y;detail\n");
+    private final StringBuilder csv = new StringBuilder("time;event;id;name;level;x;y;detail\n");
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
-    private final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss", Locale.FRANCE);
+    private final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss", Locale.US);
     public int deaths = 0;
 
     public void addListener(Listener l) { listeners.add(l); }
@@ -55,41 +55,32 @@ public final class GameState {
 
     public synchronized List<Line> entries() { return new ArrayList<>(lines); }
 
-    static int kindOf(String icon) {
-        switch (icon) {
-            case "🗡": case "✨": case "📤": case "👣": return ENVOYE;
-            case "💰": case "🪙": return DROP;
-            case "ℹ️": case "🔧": case "🔌": return SYSTEME;
-            default: return RECU;
-        }
-    }
     public synchronized String csv() { return csv.toString(); }
     public synchronized Map<String, TwomDecoder.Entity> knownIds() { return new HashMap<>(ents); }
 
     public synchronized void reset() {
         ents.clear(); mobs.clear(); hits.clear(); lines.clear(); deaths = 0; attacksSent = 0; selfId = null;
         csv.setLength(0);
-        csv.append("heure;evenement;id;nom;niveau;x;y;detail\n");
+        csv.append("time;event;id;name;level;x;y;detail\n");
         for (Listener l : listeners) l.onMobsChanged();
     }
 
-    public void info(String text) { log("ℹ️", text, null); }
+    public void info(String text) { log(SYSTEME, text, null); }
 
     /** messages de diagnostic, affiches seulement avec l'option "Details" */
-    public void debug(String text) { if (verbose) log("🔧", text, null); }
+    public void debug(String text) { if (verbose) log(SYSTEME, text, null); }
 
     private String selfId = null;
 
     private String nom(String id) {
-        if (id.equals(selfId)) return "toi";
+        if (id.equals(selfId)) return "you";
         TwomDecoder.Entity e = ents.get(id);
         return e != null ? e.name : "?" + id;
     }
 
-    private void log(String icon, String text, Object[] ev) {
+    private void log(int kind, String text, Object[] ev) {
         String h = fmt.format(new Date());
-        String line = "[" + h + "] " + icon + " " + text;
-        int kind = kindOf(icon);
+        String line = "[" + h + "] " + text;
         synchronized (this) {
             lines.add(new Line(line, kind));
             if (lines.size() > 600) lines.remove(0);
@@ -106,25 +97,25 @@ public final class GameState {
 
     /** resume des mobs en vue, pour l'ecran principal */
     public synchronized String mobsSummary() {
-        if (mobs.isEmpty()) return "Aucun mob en vue.";
+        if (mobs.isEmpty()) return "No mobs in view.";
         Map<String, Integer> c = new TreeMap<>();
-        for (TwomDecoder.Entity m : mobs.values()) c.merge(m.name + " (niv " + m.lvl + ")", 1, Integer::sum);
-        StringBuilder sb = new StringBuilder(mobs.size() + " mob(s) en vue :");
-        for (Map.Entry<String, Integer> e : c.entrySet()) sb.append("\n  ").append(e.getKey()).append(" ×").append(e.getValue());
+        for (TwomDecoder.Entity m : mobs.values()) c.merge(m.name + " (lvl " + m.lvl + ")", 1, Integer::sum);
+        StringBuilder sb = new StringBuilder(mobs.size() + " mob(s) in view:");
+        for (Map.Entry<String, Integer> e : c.entrySet()) sb.append("\n  ").append(e.getKey()).append(" x").append(e.getValue());
         sb.append("\n");
         List<Map.Entry<String, TwomDecoder.Entity>> l = new ArrayList<>(mobs.entrySet());
         l.sort((a, b) -> a.getValue().name.compareTo(b.getValue().name));
         for (Map.Entry<String, TwomDecoder.Entity> e : l) {
             TwomDecoder.Entity m = e.getValue();
-            sb.append("\n· ").append(m.name).append(" (").append(m.x).append(',').append(m.y).append(')');
+            sb.append("\n- ").append(m.name).append(" (").append(m.x).append(',').append(m.y).append(')');
             Map<String, Integer> att = hits.get(e.getKey());
-            if (att != null && !att.isEmpty()) sb.append(" — en combat avec ").append(String.join(", ", att.keySet()));
+            if (att != null && !att.isEmpty()) sb.append(" - fighting ").append(String.join(", ", att.keySet()));
         }
         return sb.toString();
     }
 
     public void connection(boolean open, String dest) {
-        log("🔌", open ? "Serveur de jeu détecté (" + dest + ")" : "Connexion au serveur de jeu fermée (" + dest + ")", null);
+        log(SYSTEME, open ? "Game server detected (" + dest + ")" : "Game server connection closed (" + dest + ")", null);
     }
 
     static boolean isId(byte[] m, int i) {
@@ -135,7 +126,7 @@ public final class GameState {
     /** un message clair envoye par le telephone au serveur */
     public void clientMessage(byte[] m) {
         if (m == null) {
-            if (showSent && verbose) log("📤", "Message non déchiffré", null);
+            if (showSent && verbose) log(ENVOYE, "Undecoded message", null);
             return;
         }
         if (m.length == 0) return;
@@ -161,11 +152,11 @@ public final class GameState {
                     }
                     if (!showSent) break;
                     if (skill == 0) {
-                        log("🗡", "Tu attaques " + (tname != null ? tname : "ta cible") + " (attaque de base)",
-                                new Object[]{"attaque_envoyee", tgt, tname, "", xv[0], yv[0], "attaque de base"});
+                        log(ENVOYE, "You attack " + (tname != null ? tname : "your target") + " (basic attack)",
+                                new Object[]{"attack_sent", tgt, tname, "", xv[0], yv[0], "basic attack"});
                     } else {
-                        log("✨", "Tu lances la compétence n°" + skill + " depuis (" + xv[0] + "," + yv[0] + ")",
-                                new Object[]{"competence_envoyee", "", "", "", xv[0], yv[0], "compétence " + skill});
+                        log(ENVOYE, "You cast skill #" + skill + " from (" + xv[0] + "," + yv[0] + ")",
+                                new Object[]{"skill_sent", "", "", "", xv[0], yv[0], "skill " + skill});
                     }
                     break;
                 }
@@ -177,23 +168,23 @@ public final class GameState {
                         i = (int) TwomDecoder.varint(m, i, true)[1];
                         i += 4;
                         long y = TwomDecoder.varint(m, i, true)[0];
-                        log("👣", "Tu te déplaces vers (" + xv[0] + "," + y + ")", null);
+                        log(ENVOYE, "You move to (" + xv[0] + "," + y + ")", null);
                     }
                     break;
                 case 0x27:
-                    if (showSent) log("📤", "Identification envoyée au serveur (appareil, version du jeu)", null);
+                    if (showSent) log(ENVOYE, "Login info sent to the server (device, game version)", null);
                     break;
                 case 0x7e:
-                    if (showSent && verbose) log("📤", "Version du client envoyée", null);
+                    if (showSent && verbose) log(ENVOYE, "Client version sent", null);
                     break;
                 case 0x68:
-                    if (showSent && verbose) log("📤", "Ping", null);
+                    if (showSent && verbose) log(ENVOYE, "Ping", null);
                     break;
                 case 0xa8:
-                    if (showSent && verbose) log("📤", "Action d'interface (a8 " + TwomDecoder.hex(m, 1, 3) + ")", null);
+                    if (showSent && verbose) log(ENVOYE, "UI action (a8 " + TwomDecoder.hex(m, 1, 3) + ")", null);
                     break;
                 default:
-                    if (showSent && verbose) log("📤", String.format("Message 0x%02x (%d octets)", op, m.length), null);
+                    if (showSent && verbose) log(ENVOYE, String.format(Locale.US, "Message 0x%02x (%d bytes)", op, m.length), null);
             }
         } catch (RuntimeException ignored) {
             // message tronque : ignore
@@ -221,9 +212,9 @@ public final class GameState {
                     if (showChat) {
                         String[] c = TwomDecoder.parseChat(m);
                         if (c == null) break;
-                        if (c[0].startsWith("TXT_ENCHANT_SUCCESS")) log("🌟", c[1] + " a réussi un enchantement", null);
+                        if (c[0].startsWith("TXT_ENCHANT_SUCCESS")) log(RECU, c[1] + " enchanted an item successfully", null);
                         else if (!c[0].startsWith("TXT_") && !c[1].startsWith("TXT_"))
-                            log("💬", c[0].isEmpty() ? c[1] : c[0] + ": " + c[1], null);
+                            log(RECU, c[0].isEmpty() ? c[1] : c[0] + ": " + c[1], null);
                     }
                     break;
                 default:
@@ -246,13 +237,13 @@ public final class GameState {
                 changed = true;
                 if (isNew) {
                     boolean spawn = op == 0x46;
-                    log(spawn ? "🟢" : "👁", e.name + " (niv " + e.lvl + ") " + (spawn ? "apparaît" : "en vue") + " en (" + e.x + "," + e.y + ")",
-                            new Object[]{spawn ? "apparition" : "en_vue", e.id, e.name, e.lvl, e.x, e.y, ""});
+                    log(RECU, e.name + " (lvl " + e.lvl + ") " + (spawn ? "spawned" : "in view") + " at (" + e.x + "," + e.y + ")",
+                            new Object[]{spawn ? "spawn" : "in_view", e.id, e.name, e.lvl, e.x, e.y, ""});
                 }
             } else if (e.name.endsWith("Gold")) {
-                log("💰", e.name + " au sol en (" + e.x + "," + e.y + ")", new Object[]{"or_au_sol", e.id, e.name, "", e.x, e.y, ""});
+                log(DROP, e.name + " dropped at (" + e.x + "," + e.y + ")", new Object[]{"gold_dropped", e.id, e.name, "", e.x, e.y, ""});
             } else if (verbose) {
-                log("🧍", e.name + " en vue en (" + e.x + "," + e.y + ")", null);
+                log(RECU, e.name + " in view at (" + e.x + "," + e.y + ")", null);
             }
         }
         if (changed) mobsChanged();
@@ -276,7 +267,7 @@ public final class GameState {
             if (mob != null) { mob.x = x; mob.y = y; }
         }
         if (mob != null) {
-            if (verbose) log("↗", mob.name + " → (" + x + "," + y + ")", null);
+            if (verbose) log(RECU, mob.name + " moves to (" + x + "," + y + ")", null);
             mobsChanged();
         }
     }
@@ -296,7 +287,7 @@ public final class GameState {
                 who = nom(att);
                 if (mob != null) hits.computeIfAbsent(tgt, k -> new LinkedHashMap<>()).merge(who, 1, Integer::sum);
             }
-            if (mob != null && verbose) log("⚔", who + " frappe " + mob.name + " (" + d[0] + ")", null);
+            if (mob != null && verbose) log(RECU, ("you".equals(who) ? "You hit " : who + " hits ") + mob.name + " (" + d[0] + ")", null);
         }
     }
 
@@ -316,9 +307,9 @@ public final class GameState {
             if (h != null) for (int c : h.values()) nb += c;
             if (mobs.remove(vic) != null) deaths++;
         }
-        String detail = "tué par " + killer + (nb > 0 ? " (" + nb + " coups)" : "");
-        log("☠", name + " mort en (" + xv[0] + "," + yv[0] + ") — " + detail,
-                new Object[]{"mort", vic, name, lvl, xv[0], yv[0], detail});
+        String detail = "killed by " + killer + (nb > 0 ? " (" + nb + (nb == 1 ? " hit)" : " hits)") : "");
+        log(RECU, name + " died at (" + xv[0] + "," + yv[0] + ") - " + detail,
+                new Object[]{"death", vic, name, lvl, xv[0], yv[0], detail});
         mobsChanged();
     }
 
@@ -331,11 +322,11 @@ public final class GameState {
             e = ents.get(id);
         }
         if (mob != null) {
-            log("👋", mob.name + " sort du champ de vision (" + mob.x + "," + mob.y + ")",
-                    new Object[]{"hors_vue", id, mob.name, mob.lvl, mob.x, mob.y, ""});
+            log(RECU, mob.name + " left view at (" + mob.x + "," + mob.y + ")",
+                    new Object[]{"out_of_view", id, mob.name, mob.lvl, mob.x, mob.y, ""});
             mobsChanged();
         } else if (e != null && e.name.endsWith("Gold")) {
-            log("🪙", e.name + " ramassé", new Object[]{"or_ramasse", id, e.name, "", e.x, e.y, ""});
+            log(DROP, e.name + " picked up", new Object[]{"gold_picked_up", id, e.name, "", e.x, e.y, ""});
         }
     }
 
@@ -390,7 +381,7 @@ public final class GameState {
                     state = -1;
                     pending.clear();
                     pendingClient.clear();
-                    gs.debug("Connexion " + dest + " : ce n'est pas le serveur de jeu");
+                    gs.debug("Connection " + dest + ": not the game server");
                     return;
                 }
                 if (good >= 5) {

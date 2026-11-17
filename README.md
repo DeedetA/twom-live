@@ -1,52 +1,52 @@
 # TWOM Live
 
-Application Android **en lecture seule** qui affiche en direct ce que le serveur de
-The World of Magic envoie à ton téléphone : mobs autour de toi (type, niveau, position),
-mobs déjà en combat avec d'autres joueurs, morts et tueur, or au sol et ramassé, chat.
-Elle affiche aussi ce que ton téléphone envoie au serveur : tes attaques (avec le mob visé),
-tes compétences, et avec « Détails » tes déplacements et les messages techniques.
+A **read-only** Android app that shows, live, what The World of Magic's game server sends to
+your phone: mobs around you (type, level, position), mobs already fighting other players,
+deaths and who killed them, gold dropped and picked up, chat.
+It also shows what your phone sends to the server: your attacks (with the targeted mob),
+your skills, and with "Details" your movements and technical messages.
 
-L'appli n'envoie rien au jeu et ne modifie aucune donnée : elle relaie les connexions
-de TWOM telles quelles et lit au passage le flux du serveur de jeu.
+The app never sends anything to the game and changes no data: it relays TWOM's
+connections as they are and reads the game server stream along the way.
 
-## Installation
+## Install
 
-1. Ouvre la page **Releases** du dépôt et télécharge `TWOM-Live.apk` (dernière version).
-2. Ouvre le fichier sur ton téléphone. Android demandera d'autoriser l'installation
-   depuis ton navigateur ou ton gestionnaire de fichiers : accepte pour cette source.
+1. Open the repository's **Releases** page and download `TWOM-Live.apk` (latest).
+2. Open the file on your phone. Android will ask you to allow installs from your
+   browser or file manager: allow it for that source.
 
-## Utilisation
+## Usage
 
-1. Ouvre **TWOM Live** et touche **▶ Démarrer**. Accepte la demande de connexion VPN
-   (une clé s'affiche dans la barre d'état).
-2. Touche **Ouvrir TWOM**. Si le jeu était déjà ouvert, ferme-le complètement et relance-le :
-   une connexion déjà établie avant la capture ne peut pas être lue.
-3. Reviens dans TWOM Live pour voir les mobs en vue et le journal.
+1. Open **TWOM Live** and tap **Start**. Accept the VPN connection request
+   (a key icon appears in the status bar).
+2. Tap **Open TWOM**. If the game was already open, close it completely and restart it:
+   a connection opened before the capture cannot be read.
+3. Come back to TWOM Live to see the mobs in view and the log.
 
-- **Chat** : affiche ou masque les messages du chat.
-- **Envoyés** : affiche ce que ton téléphone envoie (attaques 🗡, compétences ✨).
-- **Détails** : ajoute les déplacements des mobs, les coups portés et les joueurs en vue.
-- **Couleurs du journal** : vert = reçu du serveur, bleu = envoyé par ton téléphone,
-  rouge = drop (or au sol et ramassé), gris = messages de l'appli.
-- **Partager (CSV)** : envoie le journal des événements (morts, apparitions, or) au format CSV.
+- **Chat**: show or hide chat messages.
+- **Sent**: show what your phone sends (attacks, skills).
+- **Details**: adds mob movements, hits, players in view and diagnostics.
+- **Log colors**: green = received from the server, blue = sent by your phone,
+  red = drops (gold dropped and picked up), grey = app messages.
+- **Share**: sends the full log plus the events as CSV.
 
-Seul TWOM passe par le VPN local ; le reste du téléphone n'est pas concerné.
+Only TWOM goes through the local VPN; the rest of the phone is not affected.
 
-## Limites
+## Limits
 
-- Le serveur n'envoie que ce qui est proche de ton personnage : l'appli ne voit pas toute la map.
-- Le protocole a été déduit de captures de novembre 2026 ; une mise à jour du jeu peut le changer.
-- IPv4 uniquement.
+- The server only sends what is close to your character: the app does not see the whole map.
+- The protocol was worked out from November 2026 captures; a game update may change it.
+- IPv4 only.
 
-## Fonctionnement
+## How it works
 
-- `TwomVpnService` : VPN local limité à TWOM (`addAllowedApplication`).
-- `Relay` : mini-pile TCP qui termine les connexions côté téléphone et les rouvre vers les
-  vrais serveurs, plus un relais UDP (DNS).
-- `TwomDecoder` : déchiffrement (XOR + rotation, clé par trame) et lecture des messages,
-  dans les deux sens. Côté téléphone : `0x43` déplacement, `0x4f` attaque/compétence
-  (en-tête + ~2 Ko de remplissage), `0x68` ping, `0xa8` actions d'interface, `0x27` identification.
-- `GameState` : suivi des entités et journal.
+- `TwomVpnService`: local VPN limited to TWOM (`addAllowedApplication`).
+- `Relay`: small TCP stack that terminates connections on the phone and reopens them to
+  the real servers, plus a UDP relay (DNS).
+- `TwomDecoder`: decryption (XOR + rotation, per-frame key) and message parsing in both
+  directions. Phone side: `0x43` movement, `0x4f` attack/skill (header + ~2 KB padding),
+  `0x68` ping, `0xa8` UI actions, `0x27` login info.
+- `GameState`: entity tracking and log.
 
-Les tests (`app/src/test`) rejouent une vraie capture à travers le décodeur et le relais.
-Chaque push sur `main` relance les tests, compile l'APK et le publie dans les Releases.
+The tests (`app/src/test`) replay real captures through the decoder and the relay.
+Each push to `main` runs the tests, builds the APK and publishes it under Releases.

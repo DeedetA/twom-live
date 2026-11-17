@@ -57,7 +57,7 @@ public class TwomVpnService extends VpnService {
         try {
             b.addAllowedApplication(TWOM_PKG);      // seul TWOM passe par le VPN
         } catch (PackageManager.NameNotFoundException e) {
-            gs.info("TWOM n'est pas installé sur ce téléphone.");
+            gs.info("TWOM is not installed on this phone.");
             stopSelf();
             return;
         }
@@ -65,7 +65,7 @@ public class TwomVpnService extends VpnService {
 
         tun = b.establish();
         if (tun == null) {
-            gs.info("Impossible de démarrer le VPN (autorisation refusée ?).");
+            gs.info("Could not start the VPN (permission denied?).");
             stopSelf();
             return;
         }
@@ -94,7 +94,7 @@ public class TwomVpnService extends VpnService {
             }
         }, "tun-reader");
         reader.start();
-        gs.info("Capture démarrée. Lance TWOM maintenant (ou relance-le s'il était déjà ouvert).");
+        gs.info("Capture started. Open TWOM now (or restart it if it was already open).");
     }
 
     private synchronized void stopVpn() {
@@ -105,7 +105,7 @@ public class TwomVpnService extends VpnService {
         if (reader != null) reader.interrupt();
         relay = null;
         tun = null;
-        GameState.INSTANCE.info("Capture arrêtée.");
+        GameState.INSTANCE.info("Capture stopped.");
     }
 
     @Override

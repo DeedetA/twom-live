@@ -50,8 +50,8 @@ public class MainActivity extends Activity implements GameState.Listener {
         root.setPadding(dp(12), dp(12), dp(12), dp(12));
 
         TextView help = new TextView(this);
-        help.setText("Lecture seule : l'appli observe ce que le serveur envoie à TWOM, sans rien modifier "
-                + "ni envoyer au jeu. Démarre la capture AVANT d'ouvrir TWOM.");
+        help.setText("Read-only: the app shows what the game server sends to TWOM and what your phone "
+                + "sends back, without changing or sending anything. Start the capture BEFORE opening TWOM.");
         help.setTextSize(13);
         root.addView(help);
 
@@ -62,11 +62,11 @@ public class MainActivity extends Activity implements GameState.Listener {
         toggle.setOnClickListener(v -> onToggle());
         row.addView(toggle, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         Button open = new Button(this);
-        open.setText("Ouvrir TWOM");
+        open.setText("Open TWOM");
         open.setOnClickListener(v -> {
             Intent i = getPackageManager().getLaunchIntentForPackage(TwomVpnService.TWOM_PKG);
             if (i != null) startActivity(i);
-            else Toast.makeText(this, "TWOM n'est pas installé", Toast.LENGTH_SHORT).show();
+            else Toast.makeText(this, "TWOM is not installed", Toast.LENGTH_SHORT).show();
         });
         row.addView(open, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         root.addView(row);
@@ -79,12 +79,12 @@ public class MainActivity extends Activity implements GameState.Listener {
         chat.setOnCheckedChangeListener((c, on) -> gs.showChat = on);
         opts.addView(chat);
         CheckBox sent = new CheckBox(this);
-        sent.setText("Envoyés");
+        sent.setText("Sent");
         sent.setChecked(gs.showSent);
         sent.setOnCheckedChangeListener((c, on) -> gs.showSent = on);
         opts.addView(sent);
         CheckBox details = new CheckBox(this);
-        details.setText("Détails");
+        details.setText("Details");
         details.setChecked(gs.verbose);
         details.setOnCheckedChangeListener((c, on) -> gs.verbose = on);
         opts.addView(details);
@@ -104,24 +104,24 @@ public class MainActivity extends Activity implements GameState.Listener {
         row2.setOrientation(LinearLayout.HORIZONTAL);
         row2.setGravity(Gravity.CENTER_VERTICAL);
         TextView jt = new TextView(this);
-        jt.setText("Journal");
+        jt.setText("Log");
         jt.setTypeface(Typeface.DEFAULT_BOLD);
         row2.addView(jt, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         Button share = new Button(this);
-        share.setText("Partager");
+        share.setText("Share");
         share.setOnClickListener(v -> {
-            StringBuilder t = new StringBuilder("=== Journal ===\n");
+            StringBuilder t = new StringBuilder("=== Log ===\n");
             for (String l : gs.lines()) t.append(l).append('\n');
-            t.append("\n=== Événements (CSV) ===\n").append(gs.csv());
+            t.append("\n=== Events (CSV) ===\n").append(gs.csv());
             Intent s = new Intent(Intent.ACTION_SEND);
             s.setType("text/plain");
-            s.putExtra(Intent.EXTRA_SUBJECT, "TWOM Live – journal");
+            s.putExtra(Intent.EXTRA_SUBJECT, "TWOM Live - log");
             s.putExtra(Intent.EXTRA_TEXT, t.toString());
-            startActivity(Intent.createChooser(s, "Partager le journal"));
+            startActivity(Intent.createChooser(s, "Share the log"));
         });
         row2.addView(share);
         Button clear = new Button(this);
-        clear.setText("Effacer");
+        clear.setText("Clear");
         clear.setOnClickListener(v -> { gs.reset(); shown.clear(); log.setText(""); });
         row2.addView(clear);
         root.addView(row2);
@@ -157,7 +157,7 @@ public class MainActivity extends Activity implements GameState.Listener {
     }
 
     private void refreshToggle() {
-        toggle.setText(TwomVpnService.running ? "■ Arrêter" : "▶ Démarrer");
+        toggle.setText(TwomVpnService.running ? "Stop" : "Start");
     }
 
     private void onToggle() {
@@ -177,7 +177,7 @@ public class MainActivity extends Activity implements GameState.Listener {
             startService(new Intent(this, TwomVpnService.class).setAction(TwomVpnService.ACTION_START));
             ui.postDelayed(this::refreshToggle, 300);
         } else if (req == REQ_VPN) {
-            Toast.makeText(this, "Autorisation VPN refusée", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "VPN permission denied", Toast.LENGTH_SHORT).show();
         }
     }
 

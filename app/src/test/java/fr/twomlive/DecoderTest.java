@@ -45,8 +45,8 @@ public class DecoderTest {
         }
         assertEquals(6, gs.deaths);
         String all = String.join("\n", gs.lines());
-        assertTrue(all.contains("Imp mort en (3484,1505) — tué par Minxie"));
-        assertTrue(all.contains("Dark Beholder mort en (3452,1818) — tué par Ampsterdam"));
+        assertTrue(all.contains("Imp died at (3484,1505) - killed by Minxie"));
+        assertTrue(all.contains("Dark Beholder died at (3452,1818) - killed by Ampsterdam"));
     }
 
     @Test
@@ -85,7 +85,7 @@ public class DecoderTest {
             i += n;
         }
         assertEquals(103, gs.attacksSent);
-        long base = gs.lines().stream().filter(l -> l.contains("(attaque de base)")).count();
+        long base = gs.lines().stream().filter(l -> l.contains("(basic attack)")).count();
         assertEquals(42, base);
     }
 
