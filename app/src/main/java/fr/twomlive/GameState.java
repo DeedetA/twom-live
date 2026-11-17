@@ -23,6 +23,8 @@ public final class GameState {
 
     public volatile boolean showChat = true;
     public volatile boolean verbose = false;
+    public volatile boolean showSent = true;
+    public int attacksSent = 0;
 
     private final Map<String, TwomDecoder.Entity> ents = new HashMap<>();
     private final Map<String, TwomDecoder.Entity> mobs = new LinkedHashMap<>();
@@ -41,7 +43,7 @@ public final class GameState {
     public synchronized Map<String, TwomDecoder.Entity> knownIds() { return new HashMap<>(ents); }
 
     public synchronized void reset() {
-        ents.clear(); mobs.clear(); hits.clear(); lines.clear(); deaths = 0; selfId = null;
+        ents.clear(); mobs.clear(); hits.clear(); lines.clear(); deaths = 0; attacksSent = 0; selfId = null;
         csv.setLength(0);
         csv.append("heure;evenement;id;nom;niveau;x;y;detail\n");
         for (Listener l : listeners) l.onMobsChanged();
@@ -98,6 +100,79 @@ public final class GameState {
 
     public void connection(boolean open, String dest) {
         log("🔌", open ? "Serveur de jeu détecté (" + dest + ")" : "Connexion au serveur de jeu fermée (" + dest + ")", null);
+    }
+
+    static boolean isId(byte[] m, int i) {
+        return i + 4 <= m.length && (m[i] & 0xf8) == 0x88 && (m[i + 1] & 0x80) != 0
+                && (m[i + 2] & 0x80) != 0 && (m[i + 3] & 0x80) == 0;
+    }
+
+    /** un message clair envoye par le telephone au serveur */
+    public void clientMessage(byte[] m) {
+        if (m == null) {
+            if (showSent && verbose) log("📤", "Message non déchiffré", null);
+            return;
+        }
+        if (m.length == 0) return;
+        int op = m[0] & 0xff;
+        try {
+            switch (op) {
+                case 0x4f: {
+                    // [4f][?][?][y][?][?][x][compteur][competence] puis la cible si attaque de base
+                    int i = 1;
+                    i = (int) TwomDecoder.varint(m, i, true)[1];
+                    i = (int) TwomDecoder.varint(m, i, true)[1];
+                    long[] yv = TwomDecoder.varint(m, i, true); i = (int) yv[1];
+                    i = (int) TwomDecoder.varint(m, i, true)[1];
+                    i = (int) TwomDecoder.varint(m, i, true)[1];
+                    long[] xv = TwomDecoder.varint(m, i, true); i = (int) xv[1];
+                    int skill = m[i + 1] & 0xff;
+                    i += 2;
+                    String tgt = (skill == 0 && isId(m, i)) ? TwomDecoder.hex(m, i, 4) : null;
+                    String tname;
+                    synchronized (this) {
+                        attacksSent++;
+                        tname = tgt == null ? null : nom(tgt);
+                    }
+                    if (!showSent) break;
+                    if (skill == 0) {
+                        log("🗡", "Tu attaques " + (tname != null ? tname : "ta cible") + " (attaque de base)",
+                                new Object[]{"attaque_envoyee", tgt, tname, "", xv[0], yv[0], "attaque de base"});
+                    } else {
+                        log("✨", "Tu lances la compétence n°" + skill + " depuis (" + xv[0] + "," + yv[0] + ")",
+                                new Object[]{"competence_envoyee", "", "", "", xv[0], yv[0], "compétence " + skill});
+                    }
+                    break;
+                }
+                case 0x43:
+                    if (showSent && verbose) {
+                        int i = 1;
+                        i = (int) TwomDecoder.varint(m, i, true)[1];
+                        long[] xv = TwomDecoder.varint(m, i, true); i = (int) xv[1];
+                        i = (int) TwomDecoder.varint(m, i, true)[1];
+                        i += 4;
+                        long y = TwomDecoder.varint(m, i, true)[0];
+                        log("👣", "Tu te déplaces vers (" + xv[0] + "," + y + ")", null);
+                    }
+                    break;
+                case 0x27:
+                    if (showSent) log("📤", "Identification envoyée au serveur (appareil, version du jeu)", null);
+                    break;
+                case 0x7e:
+                    if (showSent && verbose) log("📤", "Version du client envoyée", null);
+                    break;
+                case 0x68:
+                    if (showSent && verbose) log("📤", "Ping", null);
+                    break;
+                case 0xa8:
+                    if (showSent && verbose) log("📤", "Action d'interface (a8 " + TwomDecoder.hex(m, 1, 3) + ")", null);
+                    break;
+                default:
+                    if (showSent && verbose) log("📤", String.format("Message 0x%02x (%d octets)", op, m.length), null);
+            }
+        } catch (RuntimeException ignored) {
+            // message tronque : ignore
+        }
     }
 
     /** un message clair recu du serveur */
@@ -252,9 +327,11 @@ public final class GameState {
         }
 
         private final TwomDecoder.FrameReader reader = new TwomDecoder.FrameReader();
+        private final TwomDecoder.FrameReader clientReader = new TwomDecoder.FrameReader();
         private final GameState gs;
         private final String dest;
         private final List<byte[]> pending = new ArrayList<>();
+        private final List<byte[]> pendingClient = new ArrayList<>();
         private int state = 0;          // 0 = a verifier, 1 = serveur de jeu, -1 = autre connexion
         private int good = 0, bad = 0;
 
@@ -264,7 +341,17 @@ public final class GameState {
 
         public boolean isGame() { return state == 1; }
 
-        public void feed(byte[] data, int off, int len) {
+        /** donnees envoyees par le telephone sur cette connexion */
+        public synchronized void feedClient(byte[] data, int off, int len) {
+            if (state < 0) return;
+            for (byte[] frame : clientReader.feed(data, off, len)) {
+                if (frame.length <= 2) continue;            // battement de coeur
+                if (state == 1) gs.clientMessage(TwomDecoder.decodeClientFrame(frame));
+                else if (pendingClient.size() < 200) pendingClient.add(frame);
+            }
+        }
+
+        public synchronized void feed(byte[] data, int off, int len) {
             if (state < 0) return;
             for (byte[] frame : reader.feed(data, off, len)) {
                 if (state == 1) { process(frame); continue; }
@@ -277,6 +364,7 @@ public final class GameState {
                 if (bad > 3 || pending.size() > 60) {
                     state = -1;
                     pending.clear();
+                    pendingClient.clear();
                     gs.debug("Connexion " + dest + " : ce n'est pas le serveur de jeu");
                     return;
                 }
@@ -285,6 +373,8 @@ public final class GameState {
                     gs.connection(true, dest);
                     for (byte[] p : pending) process(p);
                     pending.clear();
+                    for (byte[] p : pendingClient) gs.clientMessage(TwomDecoder.decodeClientFrame(p));
+                    pendingClient.clear();
                 }
             }
         }
@@ -293,7 +383,7 @@ public final class GameState {
             for (byte[] msg : TwomDecoder.decodeFrame(frame, gs.knownIds())) gs.message(msg);
         }
 
-        public void closed() {
+        public synchronized void closed() {
             if (state == 1) gs.connection(false, dest);
         }
     }

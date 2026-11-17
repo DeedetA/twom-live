@@ -115,6 +115,64 @@ public final class TwomDecoder {
         return l;
     }
 
+    // ------------------------------------------------------------ sens telephone -> serveur
+    static final boolean[] C2S_OPS = new boolean[256];
+    static {
+        for (int op : new int[]{0x27, 0x43, 0x4f, 0x68, 0x69, 0x7e, 0xa8}) C2S_OPS[op] = true;
+    }
+    /** remplissage constant des messages d'attaque (0x4f), une fois dechiffre */
+    static final byte[] FILL = {0x61, 0x3c, (byte) 0xe2, 0x37};
+
+    static byte[] decR(byte[] p, int k, int r) {
+        byte[] o = new byte[p.length];
+        for (int i = 0; i < p.length; i++) o[i] = (byte) rotr((p[i] & 0xff) ^ k, r);
+        return o;
+    }
+
+    static boolean containsFill(byte[] x, int from, int to) {
+        for (int i = from; i + 4 <= Math.min(to, x.length); i++)
+            if (x[i] == FILL[0] && x[i + 1] == FILL[1] && x[i + 2] == FILL[2] && x[i + 3] == FILL[3]) return true;
+        return false;
+    }
+
+    /**
+     * Message clair d'une trame envoyee par le telephone (sans l'octet de controle), ou null.
+     * Meme chiffrement que dans l'autre sens, mais les petites trames trompent souvent la
+     * devinette de cle : on choisit alors la cle et le decalage qui donnent un type connu.
+     */
+    public static byte[] decodeClientFrame(byte[] p) {
+        if (p.length <= 2) return null;
+        if (p.length > 1000) {                       // attaque : en-tete + ~2 Ko de remplissage
+            for (int k = 0; k < 256; k++) {
+                int r = rotFor(k);
+                if (rotr((p[0] & 0xff) ^ k, r) != 0x4f) continue;
+                byte[] part = decR(sub(p, 100, 140), k, r);
+                if (containsFill(part, 0, part.length)) {
+                    byte[] x = decR(p, k, r);
+                    return sub(x, 0, x.length - 1);
+                }
+            }
+        }
+        int k0 = guessKey(p);
+        byte[] x = dec(p, k0);
+        if (C2S_OPS[x[0] & 0xff]) return sub(x, 0, x.length - 1);
+        int[] cnt = new int[256];
+        for (byte b : p) cnt[b & 0xff]++;
+        Integer[] keys = new Integer[256];
+        for (int i = 0; i < 256; i++) keys[i] = i;
+        java.util.Arrays.sort(keys, (a, b) -> cnt[b] - cnt[a]);
+        for (int k : keys) {
+            if (cnt[k] < 2) break;
+            int base = (p[0] & 0xff) ^ k;
+            int r0 = rotFor(k);
+            if (C2S_OPS[rotr(base, r0)]) { byte[] y = decR(p, k, r0); return sub(y, 0, y.length - 1); }
+            for (int r = 0; r < 8; r++) {
+                if (C2S_OPS[rotr(base, r)]) { byte[] y = decR(p, k, r); return sub(y, 0, y.length - 1); }
+            }
+        }
+        return null;
+    }
+
     // ------------------------------------------------------------ champs
     /** varint MSB-first ; bit7 = suite ; sur le 1er octet bit6 = signe. res[0]=valeur res[1]=index suivant */
     public static long[] varint(byte[] m, int i, boolean signed) {

@@ -19,8 +19,10 @@ import org.junit.Test;
 
 public class DecoderTest {
 
-    static byte[] capture() throws Exception {
-        try (InputStream in = DecoderTest.class.getResourceAsStream("/capture1_s2c.bin")) {
+    static byte[] capture() throws Exception { return resource("/capture1_s2c.bin"); }
+
+    static byte[] resource(String name) throws Exception {
+        try (InputStream in = DecoderTest.class.getResourceAsStream(name)) {
             ByteArrayOutputStream o = new ByteArrayOutputStream();
             byte[] b = new byte[8192];
             int n;
@@ -65,6 +67,26 @@ public class DecoderTest {
         for (int i = 0; i < d.length; i += 700) jeu.feed(d, i, Math.min(700, d.length - i));
         assertTrue(jeu.isGame());
         assertEquals(6, gs.deaths);
+    }
+
+    @Test
+    public void decodeLesEnvoisDuTelephone() throws Exception {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        GameState.Stream s = new GameState.Stream(gs, "test");
+        byte[] srv = capture();
+        s.feed(srv, 0, Math.min(srv.length, 3000));       // reconnaissance du serveur de jeu
+        assertTrue(s.isGame());
+        byte[] cli = resource("/capture2_c2s.bin");
+        Random r = new Random(3);
+        for (int i = 0; i < cli.length; ) {
+            int n = Math.min(cli.length - i, 1 + r.nextInt(3000));
+            s.feedClient(cli, i, n);
+            i += n;
+        }
+        assertEquals(103, gs.attacksSent);
+        long base = gs.lines().stream().filter(l -> l.contains("(attaque de base)")).count();
+        assertEquals(42, base);
     }
 
     // ---------------------------------------------------------------- relais

@@ -274,6 +274,9 @@ public final class Relay {
                 if (p.seq == rcvNxt && ch != null) {
                     final byte[] d = p.payload();
                     rcvNxt = (rcvNxt + d.length) & Packets.MASK;
+                    if (tap != null) {
+                        try { tap.feedClient(d, 0, d.length); } catch (RuntimeException ignored) { }
+                    }
                     final SocketChannel c = ch;
                     writer.execute(() -> {
                         try {

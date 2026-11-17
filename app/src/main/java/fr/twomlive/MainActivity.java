@@ -71,8 +71,13 @@ public class MainActivity extends Activity implements GameState.Listener {
         chat.setChecked(gs.showChat);
         chat.setOnCheckedChangeListener((c, on) -> gs.showChat = on);
         opts.addView(chat);
+        CheckBox sent = new CheckBox(this);
+        sent.setText("Envoyés");
+        sent.setChecked(gs.showSent);
+        sent.setOnCheckedChangeListener((c, on) -> gs.showSent = on);
+        opts.addView(sent);
         CheckBox details = new CheckBox(this);
-        details.setText("Détails (déplacements, coups)");
+        details.setText("Détails");
         details.setChecked(gs.verbose);
         details.setOnCheckedChangeListener((c, on) -> gs.verbose = on);
         opts.addView(details);
