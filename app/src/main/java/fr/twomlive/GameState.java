@@ -49,6 +49,9 @@ public final class GameState {
 
     public void info(String text) { log("ℹ️", text, null); }
 
+    /** messages de diagnostic, affiches seulement avec l'option "Details" */
+    public void debug(String text) { if (verbose) log("🔧", text, null); }
+
     private String selfId = null;
 
     private String nom(String id) {

@@ -1,8 +1,8 @@
 package fr.twomlive;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -139,8 +139,10 @@ public final class Relay {
         final int appPort, srvPort;
         long rcvNxt, sndNxt, sndUna;
         int appWnd;
-        volatile Socket sock;
-        volatile OutputStream out;
+        // On lit et on ecrit directement sur le SocketChannel : ses verrous de lecture et d'ecriture
+        // sont separes. (Sur Android, les flux InputStream/OutputStream d'un SocketChannel partagent
+        // un meme verrou : une lecture en attente bloquait l'envoi des donnees de TWOM.)
+        volatile SocketChannel ch;
         final ExecutorService writer = Executors.newSingleThreadExecutor();
         final ArrayDeque<Seg> unacked = new ArrayDeque<>();
         boolean appFin, srvFin, closed;
@@ -164,17 +166,27 @@ public final class Relay {
 
         void run() {
             try {
-                // SocketChannel : le descripteur existe tout de suite, donc protect() fonctionne
-                Socket s = java.nio.channels.SocketChannel.open().socket();
-                r.prot.protect(s);
-                s.setTcpNoDelay(true);
-                s.connect(new InetSocketAddress(InetAddress.getByAddress(srvIp), srvPort), 15000);
-                sock = s;
-                out = s.getOutputStream();
+                relay();
+            } catch (RuntimeException e) {
+                if (r.gs != null) r.gs.debug("Erreur relais " + ip(srvIp) + ":" + srvPort + " : " + e);
+                close(true);
+            }
+        }
+
+        private void relay() {
+            String dest = ip(srvIp) + ":" + srvPort;
+            try {
+                SocketChannel c = SocketChannel.open();
+                try { r.prot.protect(c.socket()); } catch (RuntimeException ignored) { }
+                c.socket().setTcpNoDelay(true);
+                c.socket().connect(new InetSocketAddress(InetAddress.getByAddress(srvIp), srvPort), 15000);
+                ch = c;
             } catch (IOException e) {
+                if (r.gs != null) r.gs.debug("Connexion impossible vers " + dest + " : " + e.getMessage());
                 close(true);
                 return;
             }
+            if (r.gs != null) r.gs.debug("Connexion relayée vers " + dest);
             synchronized (this) {
                 if (closed) return;
                 Seg sa = new Seg(sndNxt, new byte[0], Packets.SYN | Packets.ACK);
@@ -184,10 +196,13 @@ public final class Relay {
             }
             if (tap != null) r.gs.connection(true);
             byte[] buf = new byte[MSS];
+            ByteBuffer bb = ByteBuffer.wrap(buf);
             try {
-                InputStream in = sock.getInputStream();
-                int n;
-                while ((n = in.read(buf)) > 0) {
+                while (true) {
+                    bb.clear();
+                    int n = ch.read(bb);
+                    if (n < 0) break;
+                    if (n == 0) continue;
                     if (tap != null) {
                         try { tap.feed(buf, 0, n); } catch (RuntimeException ignored) { }
                     }
@@ -255,12 +270,17 @@ public final class Relay {
                 notifyAll();
             }
             if (p.dataLen > 0) {
-                if (p.seq == rcvNxt && out != null) {
+                if (p.seq == rcvNxt && ch != null) {
                     final byte[] d = p.payload();
                     rcvNxt = (rcvNxt + d.length) & Packets.MASK;
-                    final OutputStream o = out;
+                    final SocketChannel c = ch;
                     writer.execute(() -> {
-                        try { o.write(d); o.flush(); } catch (IOException e) { close(true); }
+                        try {
+                            ByteBuffer w = ByteBuffer.wrap(d);
+                            while (w.hasRemaining()) c.write(w);
+                        } catch (IOException e) {
+                            close(true);
+                        }
                     });
                 }
                 ackNow();   // ACK (ou ACK duplique si hors sequence : l'appli renverra)
@@ -269,7 +289,7 @@ public final class Relay {
                 rcvNxt = (rcvNxt + 1) & Packets.MASK;
                 appFin = true;
                 writer.execute(() -> {
-                    try { Socket s = sock; if (s != null) s.shutdownOutput(); } catch (IOException ignored) { }
+                    try { SocketChannel c = ch; if (c != null) c.socket().shutdownOutput(); } catch (IOException ignored) { }
                 });
                 ackNow();
             }
@@ -301,9 +321,9 @@ public final class Relay {
                 }
             }
             r.tcp.remove(key, this);
-            try { Socket s = sock; if (s != null) s.close(); } catch (IOException ignored) { }
+            try { SocketChannel c = ch; if (c != null) c.close(); } catch (IOException ignored) { }
             writer.shutdown();
-            if (tap != null && sock != null) r.gs.connection(false);
+            if (tap != null && ch != null) r.gs.connection(false);
         }
     }
 
@@ -327,7 +347,7 @@ public final class Relay {
             dstPort = p.dport;
             dst = InetAddress.getByAddress(dstIp);
             s = new DatagramSocket();
-            r.prot.protect(s);
+            try { r.prot.protect(s); } catch (RuntimeException ignored) { }
             s.setSoTimeout(1000);
         }
 
