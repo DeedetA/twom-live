@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'fr.twomlive'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'fr.twomlive'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    // cle fixe : les nouvelles versions s'installeront par-dessus les anciennes
+    signingConfigs {
+        debug {
+            storeFile file('twomlive.keystore')
+            storePassword 'twomlive'
+            keyAlias 'twomlive'
+            keyPassword 'twomlive'
+        }
+    }
+
+    buildTypes {
+        debug { signingConfig signingConfigs.debug }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        encoding 'UTF-8'
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}

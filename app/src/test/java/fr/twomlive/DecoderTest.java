@@ -1,0 +1,147 @@
+package fr.twomlive;
+
+import static org.junit.Assert.*;
+
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.Arrays;
+import java.util.Random;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import org.junit.Test;
+
+public class DecoderTest {
+
+    static byte[] capture() throws Exception {
+        try (InputStream in = DecoderTest.class.getResourceAsStream("/capture1_s2c.bin")) {
+            ByteArrayOutputStream o = new ByteArrayOutputStream();
+            byte[] b = new byte[8192];
+            int n;
+            while ((n = in.read(b)) > 0) o.write(b, 0, n);
+            return o.toByteArray();
+        }
+    }
+
+    @Test
+    public void decodeLesSixMorts() throws Exception {
+        byte[] d = capture();
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        GameState.Stream s = new GameState.Stream(gs);
+        Random r = new Random(1);
+        for (int i = 0; i < d.length; ) {
+            int n = Math.min(d.length - i, 1 + r.nextInt(1500));
+            s.feed(d, i, n);
+            i += n;
+        }
+        assertEquals(6, gs.deaths);
+        String all = String.join("\n", gs.lines());
+        assertTrue(all.contains("Imp mort en (3484,1505) — tué par Minxie"));
+        assertTrue(all.contains("Dark Beholder mort en (3452,1818) — tué par Ampsterdam"));
+    }
+
+    // ---------------------------------------------------------------- relais
+    static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
+    final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();
+
+    Packets.Ip next() throws Exception {
+        byte[] p = q.poll(5, TimeUnit.SECONDS);
+        assertNotNull("pas de paquet", p);
+        assertTrue("checksum", Packets.checksumOk(p));
+        return Packets.Ip.parse(p, p.length);
+    }
+
+    @Test
+    public void relaisTcpEtUdp() throws Exception {
+        byte[] stream = capture();
+        ServerSocket ss = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"));
+        int port = ss.getLocalPort();
+        byte[] got = new byte[5];
+        Thread srv = new Thread(() -> {
+            try (Socket s = ss.accept()) {
+                new DataInputStream(s.getInputStream()).readFully(got);
+                OutputStream o = s.getOutputStream();
+                Random r = new Random(2);
+                for (int i = 0; i < stream.length; ) {
+                    int n = Math.min(stream.length - i, 1 + r.nextInt(3000));
+                    o.write(stream, i, n);
+                    o.flush();
+                    i += n;
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+        srv.start();
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        Relay relay = new Relay(q::add, new Relay.Protector() {
+            public boolean protect(Socket s) { return true; }
+            public boolean protect(DatagramSocket s) { return true; }
+        }, port, gs);
+        try {
+            int WIN = 6000;
+            byte[] syn = Packets.tcp(APP, 40000, SRV, port, 1000, 0, Packets.SYN, null, 0, 0, 1400, WIN);
+            relay.handle(syn, syn.length);
+            Packets.Ip sa = next();
+            assertEquals(Packets.SYN | Packets.ACK, sa.flags & (Packets.SYN | Packets.ACK));
+            assertEquals(1001, sa.ack);
+            long srvSeq = (sa.seq + 1) & Packets.MASK, appSeq = 1006;
+            byte[] hello = "hello".getBytes();
+            byte[] d = Packets.tcp(APP, 40000, SRV, port, 1001, srvSeq, Packets.ACK | Packets.PSH, hello, 0, 5, 0, WIN);
+            relay.handle(d, d.length);
+            assertEquals(1006, next().ack);
+            ByteArrayOutputStream rx = new ByteArrayOutputStream();
+            boolean dropped = false;
+            while (true) {
+                Packets.Ip p = next();
+                if (p.dataLen > 0) {
+                    if (!dropped && rx.size() > 20000) { dropped = true; continue; }   // perte simulee
+                    if (p.seq == srvSeq) {
+                        rx.write(p.raw, p.dataOff, p.dataLen);
+                        srvSeq = (srvSeq + p.dataLen) & Packets.MASK;
+                    }
+                    byte[] ack = Packets.tcp(APP, 40000, SRV, port, appSeq, srvSeq, Packets.ACK, null, 0, 0, 0, WIN);
+                    relay.handle(ack, ack.length);
+                }
+                if ((p.flags & Packets.FIN) != 0 && p.seq == srvSeq) {
+                    srvSeq = (srvSeq + 1) & Packets.MASK;
+                    byte[] fin = Packets.tcp(APP, 40000, SRV, port, appSeq, srvSeq, Packets.FIN | Packets.ACK, null, 0, 0, 0, WIN);
+                    relay.handle(fin, fin.length);
+                    assertEquals(appSeq + 1, next().ack);
+                    break;
+                }
+            }
+            srv.join(3000);
+            assertEquals("hello", new String(got));
+            assertTrue("flux identique", Arrays.equals(stream, rx.toByteArray()));
+            Thread.sleep(200);
+            assertEquals(6, gs.deaths);
+
+            DatagramSocket echo = new DatagramSocket(0, InetAddress.getByName("127.0.0.1"));
+            new Thread(() -> {
+                try {
+                    byte[] b = new byte[2000];
+                    DatagramPacket dp = new DatagramPacket(b, b.length);
+                    echo.receive(dp);
+                    echo.send(new DatagramPacket(b, dp.getLength(), dp.getSocketAddress()));
+                } catch (Exception ignored) { }
+            }).start();
+            byte[] u = Packets.udp(APP, 5353, SRV, echo.getLocalPort(), "dns?".getBytes(), 0, 4);
+            relay.handle(u, u.length);
+            Packets.Ip ur = next();
+            assertEquals(17, ur.proto);
+            assertEquals(5353, ur.dport);
+            assertEquals("dns?", new String(ur.payload()));
+        } finally {
+            relay.stop();
+        }
+    }
+}
