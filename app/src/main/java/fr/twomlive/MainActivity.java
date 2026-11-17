@@ -96,12 +96,15 @@ public class MainActivity extends Activity implements GameState.Listener {
         jt.setTypeface(Typeface.DEFAULT_BOLD);
         row2.addView(jt, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         Button share = new Button(this);
-        share.setText("Partager (CSV)");
+        share.setText("Partager");
         share.setOnClickListener(v -> {
+            StringBuilder t = new StringBuilder("=== Journal ===\n");
+            for (String l : gs.lines()) t.append(l).append('\n');
+            t.append("\n=== Événements (CSV) ===\n").append(gs.csv());
             Intent s = new Intent(Intent.ACTION_SEND);
             s.setType("text/plain");
-            s.putExtra(Intent.EXTRA_SUBJECT, "TWOM Live – événements");
-            s.putExtra(Intent.EXTRA_TEXT, gs.csv());
+            s.putExtra(Intent.EXTRA_SUBJECT, "TWOM Live – journal");
+            s.putExtra(Intent.EXTRA_TEXT, t.toString());
             startActivity(Intent.createChooser(s, "Partager le journal"));
         });
         row2.addView(share);

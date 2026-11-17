@@ -47,6 +47,26 @@ public class DecoderTest {
         assertTrue(all.contains("Dark Beholder mort en (3452,1818) — tué par Ampsterdam"));
     }
 
+    @Test
+    public void reconnaitLeServeurDeJeuEtIgnoreLeReste() throws Exception {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        GameState.Stream autre = new GameState.Stream(gs, "test:443");
+        Random r = new Random(7);
+        byte[] bruit = new byte[200000];
+        r.nextBytes(bruit);
+        bruit[0] = 0x16; bruit[1] = 0x03;              // ressemble a du TLS
+        autre.feed(bruit, 0, bruit.length);
+        assertFalse(autre.isGame());
+        assertEquals(0, gs.deaths);
+
+        byte[] d = capture();
+        GameState.Stream jeu = new GameState.Stream(gs, "test:12210");
+        for (int i = 0; i < d.length; i += 700) jeu.feed(d, i, Math.min(700, d.length - i));
+        assertTrue(jeu.isGame());
+        assertEquals(6, gs.deaths);
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

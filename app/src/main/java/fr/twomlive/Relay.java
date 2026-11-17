@@ -161,7 +161,9 @@ public final class Relay {
             sndNxt = ThreadLocalRandom.current().nextLong(1, 0x7fffffffL);
             sndUna = sndNxt;
             appWnd = syn.window;
-            tap = (srvPort == r.gamePort && r.gs != null) ? new GameState.Stream(r.gs) : null;
+            // toute connexion hors ports web/DNS est examinee ; le decodeur garde celle du jeu
+            boolean web = srvPort == 80 || srvPort == 443 || srvPort == 853 || srvPort == 53 || srvPort == 5228;
+            tap = (!web && r.gs != null) ? new GameState.Stream(r.gs, ip(srvIp) + ":" + srvPort) : null;
         }
 
         void run() {
@@ -194,7 +196,6 @@ public final class Relay {
                 sndNxt = sa.end();
                 send(sa);
             }
-            if (tap != null) r.gs.connection(true);
             byte[] buf = new byte[MSS];
             ByteBuffer bb = ByteBuffer.wrap(buf);
             try {
@@ -323,7 +324,7 @@ public final class Relay {
             r.tcp.remove(key, this);
             try { SocketChannel c = ch; if (c != null) c.close(); } catch (IOException ignored) { }
             writer.shutdown();
-            if (tap != null && ch != null) r.gs.connection(false);
+            if (tap != null) tap.closed();
         }
     }
 

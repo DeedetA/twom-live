@@ -96,8 +96,8 @@ public final class GameState {
         return sb.toString();
     }
 
-    public void connection(boolean open) {
-        log("🔌", open ? "Connecté au serveur de jeu" : "Connexion au serveur de jeu fermée", null);
+    public void connection(boolean open, String dest) {
+        log("🔌", open ? "Serveur de jeu détecté (" + dest + ")" : "Connexion au serveur de jeu fermée (" + dest + ")", null);
     }
 
     /** un message clair recu du serveur */
@@ -239,17 +239,62 @@ public final class GameState {
         }
     }
 
-    /** decodeur d'une connexion au serveur de jeu */
+    /**
+     * Lecture d'une connexion TCP de TWOM. On ne sait pas d'avance quel port utilise le serveur
+     * de jeu : on regarde les premieres trames, et on ne decode la suite que si elles ont la
+     * forme des messages du jeu. Les autres connexions (HTTPS, etc.) sont ignorees.
+     */
     public static final class Stream {
+        static final boolean[] FIRST_OPS = new boolean[256];
+        static {
+            for (int op : new int[]{0x0a, 0x23, 0x2b, 0x43, 0x45, 0x46, 0x47, 0x49, 0x4d, 0x5b, 0x5e, 0x62,
+                    0x6a, 0x6c, 0x7a, 0xa0, 0xa4, 0xa9, 0xaa, 0xbc, 0xd6}) FIRST_OPS[op] = true;
+        }
+
         private final TwomDecoder.FrameReader reader = new TwomDecoder.FrameReader();
         private final GameState gs;
+        private final String dest;
+        private final List<byte[]> pending = new ArrayList<>();
+        private int state = 0;          // 0 = a verifier, 1 = serveur de jeu, -1 = autre connexion
+        private int good = 0, bad = 0;
 
-        public Stream(GameState gs) { this.gs = gs; }
+        public Stream(GameState gs) { this(gs, "?"); }
+
+        public Stream(GameState gs, String dest) { this.gs = gs; this.dest = dest; }
+
+        public boolean isGame() { return state == 1; }
 
         public void feed(byte[] data, int off, int len) {
+            if (state < 0) return;
             for (byte[] frame : reader.feed(data, off, len)) {
-                for (byte[] msg : TwomDecoder.decodeFrame(frame, gs.knownIds())) gs.message(msg);
+                if (state == 1) { process(frame); continue; }
+                pending.add(frame);
+                if (frame.length > 2) {
+                    List<byte[]> m = TwomDecoder.decodeFrame(frame, gs.knownIds());
+                    if (!m.isEmpty() && m.get(0).length > 0 && FIRST_OPS[m.get(0)[0] & 0xff]) good++;
+                    else bad++;
+                }
+                if (bad > 3 || pending.size() > 60) {
+                    state = -1;
+                    pending.clear();
+                    gs.debug("Connexion " + dest + " : ce n'est pas le serveur de jeu");
+                    return;
+                }
+                if (good >= 5) {
+                    state = 1;
+                    gs.connection(true, dest);
+                    for (byte[] p : pending) process(p);
+                    pending.clear();
+                }
             }
+        }
+
+        private void process(byte[] frame) {
+            for (byte[] msg : TwomDecoder.decodeFrame(frame, gs.knownIds())) gs.message(msg);
+        }
+
+        public void closed() {
+            if (state == 1) gs.connection(false, dest);
         }
     }
 }
