@@ -29,6 +29,11 @@ connections as they are and reads the game server stream along the way.
 - **Log colors**: green = received from the server, blue = sent by your phone,
   red = drops (gold dropped and picked up), grey = app messages.
 - **Share**: sends the full log plus the events as CSV.
+- **Spawn alert**: type a name (or several, comma-separated: `Imp, Spector`). Case is ignored
+  and part of the name is enough. When a matching entity spawns or comes into view, the app
+  alerts you once with its ID and coordinates, by **Notification**, **Vibration** and/or
+  **Voice** (your choice). The name and choices are remembered. **Test** tries the alert.
+  Alerts appear in orange in the log.
 
 Only TWOM goes through the local VPN; the rest of the phone is not affected.
 

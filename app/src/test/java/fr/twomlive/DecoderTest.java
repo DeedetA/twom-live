@@ -124,6 +124,34 @@ public class DecoderTest {
         }
     }
 
+    @Test
+    public void alerteQuandUnNomSurveilleApparait() throws Exception {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        GameState.AlertListener l = (e, spawned) -> seen.add(e.name + "/" + e.id + "/" + e.x + "," + e.y);
+        gs.addAlertListener(l);
+        try {
+            gs.setWatch(" dark BEHOLDER ,  snaketail ");
+            GameState.Stream s = new GameState.Stream(gs, "test");
+            byte[] d = capture();
+            s.feed(d, 0, d.length);
+            assertFalse(seen.isEmpty());
+            for (String x : seen) assertTrue(x, x.startsWith("Dark Beholder/") || x.startsWith("Snaketail Lizard/"));
+            assertEquals("une alerte par entite", new java.util.HashSet<>(seen).size(), seen.size());
+            assertTrue(gs.lines().stream().anyMatch(x -> x.contains("ALERT: Dark Beholder (lvl 22)") && x.contains(" - ID ")));
+            gs.setWatch("");
+            gs.reset();
+            seen.clear();
+            s = new GameState.Stream(gs, "test");
+            s.feed(d, 0, d.length);
+            assertTrue(seen.isEmpty());
+        } finally {
+            gs.removeAlertListener(l);
+            gs.setWatch("");
+        }
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

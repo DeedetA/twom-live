@@ -30,7 +30,50 @@ public final class GameState {
     private final Map<String, TwomDecoder.Entity> mobs = new LinkedHashMap<>();
     private final Map<String, Map<String, Integer>> hits = new HashMap<>();
     /** categories de lignes du journal (pour les couleurs) */
-    public static final int RECU = 0, ENVOYE = 1, DROP = 2, SYSTEME = 3;
+    public static final int RECU = 0, ENVOYE = 1, DROP = 2, SYSTEME = 3, ALERTE = 4;
+
+    /** prevenu quand une entite dont le nom est surveille apparait ou entre dans le champ de vision */
+    public interface AlertListener {
+        void onMatch(TwomDecoder.Entity e, boolean spawned);
+    }
+
+    private final List<AlertListener> alertListeners = new CopyOnWriteArrayList<>();
+    private volatile List<String> watch = new ArrayList<>();
+    private final java.util.Set<String> alerted = new java.util.HashSet<>();
+
+    public void addAlertListener(AlertListener l) { if (!alertListeners.contains(l)) alertListeners.add(l); }
+    public void removeAlertListener(AlertListener l) { alertListeners.remove(l); }
+
+    /** noms surveilles, separes par des virgules ; la casse est ignoree, un morceau du nom suffit */
+    public void setWatch(String raw) {
+        List<String> w = new ArrayList<>();
+        if (raw != null) for (String part : raw.split(",")) {
+            String t = part.trim().toLowerCase(Locale.ROOT);
+            if (!t.isEmpty()) w.add(t);
+        }
+        watch = w;
+        synchronized (this) { alerted.clear(); }
+    }
+
+    public boolean matches(String name) {
+        if (name == null) return false;
+        String n = name.toLowerCase(Locale.ROOT);
+        for (String t : watch) if (n.contains(t)) return true;
+        return false;
+    }
+
+    private void checkWatch(TwomDecoder.Entity e, boolean spawned) {
+        if (watch.isEmpty() || e.name.endsWith("Gold") || !matches(e.name)) return;
+        synchronized (this) {
+            if (!alerted.add(e.id)) return;          // une seule alerte tant qu'il reste en vue
+        }
+        String lvl = e.lvl != null ? " (lvl " + e.lvl + ")" : "";
+        log(ALERTE, "ALERT: " + e.name + lvl + (spawned ? " spawned" : " in view") + " at (" + e.x + "," + e.y + ") - ID " + e.id,
+                new Object[]{"alert", e.id, e.name, e.lvl, e.x, e.y, spawned ? "spawned" : "in view"});
+        for (AlertListener l : alertListeners) {
+            try { l.onMatch(e, spawned); } catch (RuntimeException ignored) { }
+        }
+    }
 
     public static final class Line {
         public final String text;
@@ -59,7 +102,7 @@ public final class GameState {
     public synchronized Map<String, TwomDecoder.Entity> knownIds() { return new HashMap<>(ents); }
 
     public synchronized void reset() {
-        ents.clear(); mobs.clear(); hits.clear(); lines.clear(); deaths = 0; attacksSent = 0; selfId = null;
+        ents.clear(); mobs.clear(); hits.clear(); lines.clear(); alerted.clear(); deaths = 0; attacksSent = 0; selfId = null;
         csv.setLength(0);
         csv.append("time;event;id;name;level;x;y;detail\n");
         for (Listener l : listeners) l.onMobsChanged();
@@ -245,6 +288,7 @@ public final class GameState {
             } else if (verbose) {
                 log(RECU, e.name + " in view at (" + e.x + "," + e.y + ")", null);
             }
+            checkWatch(e, op == 0x46);
         }
         if (changed) mobsChanged();
     }
@@ -306,6 +350,7 @@ public final class GameState {
             Map<String, Integer> h = hits.remove(vic);
             if (h != null) for (int c : h.values()) nb += c;
             if (mobs.remove(vic) != null) deaths++;
+            alerted.remove(vic);
         }
         String detail = "killed by " + killer + (nb > 0 ? " (" + nb + (nb == 1 ? " hit)" : " hits)") : "");
         log(RECU, name + " died at (" + xv[0] + "," + yv[0] + ") - " + detail,
@@ -318,6 +363,7 @@ public final class GameState {
         TwomDecoder.Entity mob, e;
         synchronized (this) {
             mob = mobs.remove(id);
+            alerted.remove(id);
             hits.remove(id);
             e = ents.get(id);
         }

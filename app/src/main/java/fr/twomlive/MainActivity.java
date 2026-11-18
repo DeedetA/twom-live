@@ -2,6 +2,13 @@ package fr.twomlive;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.VpnService;
@@ -32,7 +39,8 @@ public class MainActivity extends Activity implements GameState.Listener {
 
     // vert = recu du serveur, bleu = envoye par le telephone, rouge = drop, gris = messages de l'appli
     private static final int[] COLORS = {
-            Color.rgb(46, 125, 50), Color.rgb(21, 101, 192), Color.rgb(198, 40, 40), Color.rgb(110, 110, 110)};
+            Color.rgb(46, 125, 50), Color.rgb(21, 101, 192), Color.rgb(198, 40, 40), Color.rgb(110, 110, 110),
+            Color.rgb(230, 81, 0)};
     private Button toggle;
     private TextView mobs, log;
     private ScrollView logScroll;
@@ -49,11 +57,16 @@ public class MainActivity extends Activity implements GameState.Listener {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(12), dp(12), dp(12), dp(12));
 
-        TextView help = new TextView(this);
-        help.setText("Read-only: the app shows what the game server sends to TWOM and what your phone "
-                + "sends back, without changing or sending anything. Start the capture BEFORE opening TWOM.");
-        help.setTextSize(13);
-        root.addView(help);
+        SharedPreferences prefs = getSharedPreferences(Alerter.PREFS, MODE_PRIVATE);
+        Alerter alerter = Alerter.get(this);
+        alerter.attach();
+
+        TextView credit = new TextView(this);
+        credit.setText("Made with love by @Deedet, pm me if issue found.\nPlease don't use it for botting or for macros ❤️");
+        credit.setTextSize(13);
+        credit.setGravity(Gravity.CENTER_HORIZONTAL);
+        credit.setPadding(0, dp(4), 0, dp(4));
+        root.addView(credit);
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -89,6 +102,57 @@ public class MainActivity extends Activity implements GameState.Listener {
         details.setOnCheckedChangeListener((c, on) -> gs.verbose = on);
         opts.addView(details);
         root.addView(opts);
+
+        // ------------------------------------------------ alerte d'apparition
+        TextView at = new TextView(this);
+        at.setText("Spawn alert");
+        at.setTypeface(Typeface.DEFAULT_BOLD);
+        at.setPadding(0, dp(6), 0, 0);
+        root.addView(at);
+        EditText name = new EditText(this);
+        name.setSingleLine(true);
+        name.setHint("Name to watch (several: Imp, Spector)");
+        name.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        name.setText(prefs.getString(Alerter.KEY_NAME, ""));
+        name.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable s) {
+                prefs.edit().putString(Alerter.KEY_NAME, s.toString()).apply();
+                gs.setWatch(s.toString());
+            }
+        });
+        root.addView(name);
+        LinearLayout alertRow = new LinearLayout(this);
+        alertRow.setOrientation(LinearLayout.HORIZONTAL);
+        alertRow.setGravity(Gravity.CENTER_VERTICAL);
+        CheckBox notif = new CheckBox(this);
+        notif.setText("Notification");
+        notif.setChecked(prefs.getBoolean(Alerter.KEY_NOTIF, true));
+        notif.setOnCheckedChangeListener((c, on) -> {
+            prefs.edit().putBoolean(Alerter.KEY_NOTIF, on).apply();
+            if (on) askNotificationPermission();
+        });
+        alertRow.addView(notif);
+        CheckBox vib = new CheckBox(this);
+        vib.setText("Vibration");
+        vib.setChecked(prefs.getBoolean(Alerter.KEY_VIBRATE, true));
+        vib.setOnCheckedChangeListener((c, on) -> prefs.edit().putBoolean(Alerter.KEY_VIBRATE, on).apply());
+        alertRow.addView(vib);
+        CheckBox voice = new CheckBox(this);
+        voice.setText("Voice");
+        voice.setChecked(prefs.getBoolean(Alerter.KEY_VOICE, false));
+        voice.setOnCheckedChangeListener((c, on) -> prefs.edit().putBoolean(Alerter.KEY_VOICE, on).apply());
+        alertRow.addView(voice);
+        Button test = new Button(this);
+        test.setText("Test");
+        test.setOnClickListener(v -> alerter.fire("Test alert", "ID 8ee6a91c at (2267,1240)",
+                "Test alert. Imp spawned at 2267, 1240"));
+        alertRow.addView(test);
+        android.widget.HorizontalScrollView alertScroll = new android.widget.HorizontalScrollView(this);
+        alertScroll.addView(alertRow);
+        root.addView(alertScroll);
+        if (notif.isChecked()) askNotificationPermission();
 
         mobs = new TextView(this);
         mobs.setTypeface(Typeface.MONOSPACE);
@@ -154,6 +218,13 @@ public class MainActivity extends Activity implements GameState.Listener {
     protected void onPause() {
         GameState.INSTANCE.removeListener(this);
         super.onPause();
+    }
+
+    private void askNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 2);
+        }
     }
 
     private void refreshToggle() {

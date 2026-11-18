@@ -45,6 +45,7 @@ public class TwomVpnService extends VpnService {
     private synchronized void startVpn() {
         if (running) return;
         GameState gs = GameState.INSTANCE;
+        Alerter.get(this).attach();                  // nom surveille + alertes
         SharedPreferences prefs = getSharedPreferences("twomlive", MODE_PRIVATE);
         int gamePort = prefs.getInt("port", 12210);
 
