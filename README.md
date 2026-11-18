@@ -34,14 +34,6 @@ connections as they are and reads the game server stream along the way.
   alerts you once with its ID and coordinates, by **Notification**, **Vibration** and/or
   **Voice** (your choice). The name and choices are remembered. **Test** tries the alert.
   Alerts appear in orange in the log.
-- **Circles on screen**: draws an orange circle with the name around every watched mob,
-  on top of the game (needs "Display over other apps"). Touches still go to the game.
-  Useful when a boss uses the same sprite as a basic mob.
-- **Calibrate** (once per phone): opens TWOM with a floating panel. Green circles are drawn
-  around every mob and a blue cross on your character. Move once, then use Size / Height /
-  Left / Right / Up / Down until the circles sit on the sprites, and tap Done.
-  Positions come from the server a few times per second, so a circle may trail slightly
-  behind a moving mob.
 
 Only TWOM goes through the local VPN; the rest of the phone is not affected.
 

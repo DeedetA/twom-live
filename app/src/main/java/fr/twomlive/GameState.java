@@ -44,32 +44,10 @@ public final class GameState {
     private boolean hasSelf = false;
     private int selfX, selfY;
 
-    /** un repere a dessiner par-dessus le jeu */
-    public static final class Mark {
-        public final String id, name;
-        public final int x, y;
-        public final boolean watched;
-        Mark(String id, String name, int x, int y, boolean watched) {
-            this.id = id; this.name = name; this.x = x; this.y = y; this.watched = watched;
-        }
-    }
-
     /** position de ton personnage, ou null si encore inconnue */
     public synchronized int[] self() { return hasSelf ? new int[]{selfX, selfY} : null; }
 
     synchronized void setSelf(long x, long y) { hasSelf = true; selfX = (int) x; selfY = (int) y; }
-
-    /** entites en vue a entourer : celles surveillees, et avec all=true tous les mobs (calibration) */
-    public synchronized List<Mark> marks(boolean all) {
-        List<Mark> out = new ArrayList<>();
-        for (String id : inView) {
-            TwomDecoder.Entity e = ents.get(id);
-            if (e == null || e.name.endsWith("Gold")) continue;
-            boolean w = !watch.isEmpty() && matches(e.name);
-            if (w || (all && e.lvl != null)) out.add(new Mark(id, e.name, e.x, e.y, w));
-        }
-        return out;
-    }
 
     /** connexion au jeu fermee : plus rien n'est en vue */
     public synchronized void clearView() {

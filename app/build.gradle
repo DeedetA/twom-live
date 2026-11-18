@@ -10,8 +10,8 @@ android {
         applicationId 'fr.twomlive'
         minSdk 24
         targetSdk 34
-        versionCode 9
-        versionName '1.8'
+        versionCode 10
+        versionName '1.9'
     }
 
     // cle fixe : les nouvelles versions s'installeront par-dessus les anciennes
