@@ -154,6 +154,31 @@ public class MainActivity extends Activity implements GameState.Listener {
         root.addView(alertScroll);
         if (notif.isChecked()) askNotificationPermission();
 
+        // ------------------------------------------------ cercles par-dessus le jeu
+        Overlay overlay = Overlay.get(this);
+        LinearLayout ovRow = new LinearLayout(this);
+        ovRow.setOrientation(LinearLayout.HORIZONTAL);
+        ovRow.setGravity(Gravity.CENTER_VERTICAL);
+        CheckBox circles = new CheckBox(this);
+        circles.setText("Circles on screen");
+        circles.setChecked(prefs.getBoolean(Overlay.KEY_ON, false));
+        circles.setOnCheckedChangeListener((c, on) -> {
+            prefs.edit().putBoolean(Overlay.KEY_ON, on).apply();
+            if (on && !overlay.canDraw()) askOverlayPermission();
+            else overlay.setEnabled(on);
+        });
+        ovRow.addView(circles, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        Button calib = new Button(this);
+        calib.setText("Calibrate");
+        calib.setOnClickListener(v -> {
+            if (!overlay.canDraw()) { askOverlayPermission(); return; }
+            overlay.startCalibration();
+            Intent i = getPackageManager().getLaunchIntentForPackage(TwomVpnService.TWOM_PKG);
+            if (i != null) startActivity(i);
+        });
+        ovRow.addView(calib);
+        root.addView(ovRow);
+
         mobs = new TextView(this);
         mobs.setTypeface(Typeface.MONOSPACE);
         mobs.setTextSize(12);
@@ -206,6 +231,11 @@ public class MainActivity extends Activity implements GameState.Listener {
         super.onResume();
         GameState gs = GameState.INSTANCE;
         gs.addListener(this);
+        Overlay ov = Overlay.get(this);
+        ov.appInFront = true;
+        if (getSharedPreferences(Alerter.PREFS, MODE_PRIVATE).getBoolean(Overlay.KEY_ON, false) && ov.canDraw()) {
+            ov.setEnabled(true);
+        }
         shown.clear();
         List<GameState.Line> l = gs.entries();
         for (int i = Math.max(0, l.size() - MAX_LINES); i < l.size(); i++) shown.add(l.get(i));
@@ -216,8 +246,15 @@ public class MainActivity extends Activity implements GameState.Listener {
 
     @Override
     protected void onPause() {
+        Overlay.get(this).appInFront = false;
         GameState.INSTANCE.removeListener(this);
         super.onPause();
+    }
+
+    private void askOverlayPermission() {
+        Toast.makeText(this, "Allow \"Display over other apps\" for TWOM Live", Toast.LENGTH_LONG).show();
+        startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:" + getPackageName())));
     }
 
     private void askNotificationPermission() {

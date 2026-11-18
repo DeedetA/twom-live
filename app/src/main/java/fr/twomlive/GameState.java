@@ -40,6 +40,42 @@ public final class GameState {
     private final List<AlertListener> alertListeners = new CopyOnWriteArrayList<>();
     private volatile List<String> watch = new ArrayList<>();
     private final java.util.Set<String> alerted = new java.util.HashSet<>();
+    private final java.util.Set<String> inView = new java.util.HashSet<>();
+    private boolean hasSelf = false;
+    private int selfX, selfY;
+
+    /** un repere a dessiner par-dessus le jeu */
+    public static final class Mark {
+        public final String id, name;
+        public final int x, y;
+        public final boolean watched;
+        Mark(String id, String name, int x, int y, boolean watched) {
+            this.id = id; this.name = name; this.x = x; this.y = y; this.watched = watched;
+        }
+    }
+
+    /** position de ton personnage, ou null si encore inconnue */
+    public synchronized int[] self() { return hasSelf ? new int[]{selfX, selfY} : null; }
+
+    synchronized void setSelf(long x, long y) { hasSelf = true; selfX = (int) x; selfY = (int) y; }
+
+    /** entites en vue a entourer : celles surveillees, et avec all=true tous les mobs (calibration) */
+    public synchronized List<Mark> marks(boolean all) {
+        List<Mark> out = new ArrayList<>();
+        for (String id : inView) {
+            TwomDecoder.Entity e = ents.get(id);
+            if (e == null || e.name.endsWith("Gold")) continue;
+            boolean w = !watch.isEmpty() && matches(e.name);
+            if (w || (all && e.lvl != null)) out.add(new Mark(id, e.name, e.x, e.y, w));
+        }
+        return out;
+    }
+
+    /** connexion au jeu fermee : plus rien n'est en vue */
+    public synchronized void clearView() {
+        inView.clear(); mobs.clear(); hits.clear(); alerted.clear(); hasSelf = false;
+        for (Listener l : listeners) l.onMobsChanged();
+    }
 
     public void addAlertListener(AlertListener l) { if (!alertListeners.contains(l)) alertListeners.add(l); }
     public void removeAlertListener(AlertListener l) { alertListeners.remove(l); }
@@ -102,7 +138,7 @@ public final class GameState {
     public synchronized Map<String, TwomDecoder.Entity> knownIds() { return new HashMap<>(ents); }
 
     public synchronized void reset() {
-        ents.clear(); mobs.clear(); hits.clear(); lines.clear(); alerted.clear(); deaths = 0; attacksSent = 0; selfId = null;
+        ents.clear(); mobs.clear(); hits.clear(); lines.clear(); alerted.clear(); inView.clear(); hasSelf = false; deaths = 0; attacksSent = 0; selfId = null;
         csv.setLength(0);
         csv.append("time;event;id;name;level;x;y;detail\n");
         for (Listener l : listeners) l.onMobsChanged();
@@ -189,6 +225,7 @@ public final class GameState {
                     i += 2;
                     String tgt = (skill == 0 && isId(m, i)) ? TwomDecoder.hex(m, i, 4) : null;
                     String tname;
+                    setSelf(xv[0], yv[0]);
                     synchronized (this) {
                         attacksSent++;
                         tname = tgt == null ? null : nom(tgt);
@@ -203,17 +240,17 @@ public final class GameState {
                     }
                     break;
                 }
-                case 0x43:
-                    if (showSent && verbose) {
-                        int i = 1;
-                        i = (int) TwomDecoder.varint(m, i, true)[1];
-                        long[] xv = TwomDecoder.varint(m, i, true); i = (int) xv[1];
-                        i = (int) TwomDecoder.varint(m, i, true)[1];
-                        i += 4;
-                        long y = TwomDecoder.varint(m, i, true)[0];
-                        log(ENVOYE, "You move to (" + xv[0] + "," + y + ")", null);
-                    }
+                case 0x43: {
+                    int i = 1;
+                    i = (int) TwomDecoder.varint(m, i, true)[1];
+                    long[] xv = TwomDecoder.varint(m, i, true); i = (int) xv[1];
+                    i = (int) TwomDecoder.varint(m, i, true)[1];
+                    i += 4;
+                    long y = TwomDecoder.varint(m, i, true)[0];
+                    setSelf(xv[0], y);
+                    if (showSent && verbose) log(ENVOYE, "You move to (" + xv[0] + "," + y + ")", null);
                     break;
+                }
                 case 0x27:
                     if (showSent) log(ENVOYE, "Login info sent to the server (device, game version)", null);
                     break;
@@ -273,6 +310,7 @@ public final class GameState {
             boolean isNew;
             synchronized (this) {
                 ents.put(e.id, e);
+                if (!e.name.endsWith("Gold")) inView.add(e.id);
                 isNew = e.lvl != null && !mobs.containsKey(e.id);
                 if (e.lvl != null) mobs.put(e.id, e);
             }
@@ -307,6 +345,7 @@ public final class GameState {
         synchronized (this) {
             TwomDecoder.Entity e = ents.get(id);
             if (e != null) { e.x = x; e.y = y; }
+            if (id.equals(selfId)) setSelf(x, y);
             mob = mobs.get(id);
             if (mob != null) { mob.x = x; mob.y = y; }
         }
@@ -351,6 +390,7 @@ public final class GameState {
             if (h != null) for (int c : h.values()) nb += c;
             if (mobs.remove(vic) != null) deaths++;
             alerted.remove(vic);
+            inView.remove(vic);
         }
         String detail = "killed by " + killer + (nb > 0 ? " (" + nb + (nb == 1 ? " hit)" : " hits)") : "");
         log(RECU, name + " died at (" + xv[0] + "," + yv[0] + ") - " + detail,
@@ -364,6 +404,7 @@ public final class GameState {
         synchronized (this) {
             mob = mobs.remove(id);
             alerted.remove(id);
+            inView.remove(id);
             hits.remove(id);
             e = ents.get(id);
         }
@@ -446,7 +487,10 @@ public final class GameState {
         }
 
         public synchronized void closed() {
-            if (state == 1) gs.connection(false, dest);
+            if (state == 1) {
+                gs.connection(false, dest);
+                gs.clearView();
+            }
         }
     }
 }

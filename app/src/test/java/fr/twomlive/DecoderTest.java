@@ -152,6 +152,34 @@ public class DecoderTest {
         }
     }
 
+    @Test
+    public void positionsPourLesCercles() throws Exception {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        gs.setWatch("imp");
+        try {
+            GameState.Stream s = new GameState.Stream(gs, "test");
+            byte[] d = capture();
+            s.feed(d, 0, Math.min(d.length, 6000));
+            assertTrue(s.isGame());
+            assertNull(gs.self());                         // position encore inconnue
+            byte[] cli = resource("/capture2_c2s.bin");
+            s.feedClient(cli, 0, Math.min(cli.length, 4000));
+            assertNotNull(gs.self());                      // connue grace a tes deplacements
+            s.feed(d, 6000, d.length - 6000);
+            java.util.List<GameState.Mark> w = gs.marks(false), all = gs.marks(true);
+            assertFalse(w.isEmpty());
+            for (GameState.Mark m : w) { assertTrue(m.watched); assertEquals("Imp", m.name); }
+            assertTrue(all.size() >= w.size());
+            assertTrue(all.stream().anyMatch(m -> !m.watched));
+            s.closed();
+            assertTrue(gs.marks(true).isEmpty());          // connexion fermee : plus rien en vue
+            assertNull(gs.self());
+        } finally {
+            gs.setWatch("");
+        }
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();
