@@ -31,7 +31,8 @@ connections as they are and reads the game server stream along the way.
 - **Share**: sends the full log plus the events as CSV.
 - **Mob alert**: type a name (or several, comma-separated: `Imp, Spector`). Case is ignored
   and part of the name is enough. When a matching entity spawns or comes into view, the app
-  alerts you once with its ID and coordinates, by **Notification**, **Vibration** and/or
+  alerts you once with its ID, coordinates, and its distance and direction from you
+  (e.g. "300 north-east", north = top of the screen), by **Notification**, **Vibration** and/or
   **Voice** (your choice). The name and choices are remembered. **Test** tries the alert.
   Alerts appear in orange in the log.
 

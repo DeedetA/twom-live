@@ -230,6 +230,22 @@ public class DecoderTest {
         }
     }
 
+    @Test
+    public void directionDuMob() {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        assertNull(gs.relative(100, 100));                 // position inconnue
+        gs.setSelf(1000, 1000);
+        assertEquals("300 north", gs.relative(1000, 700));
+        assertEquals("300 south", gs.relative(1000, 1300));
+        assertEquals("200 east", gs.relative(1200, 1000));
+        assertEquals("200 west", gs.relative(800, 1000));
+        assertEquals("280 north-east", gs.relative(1200, 800));
+        assertEquals("280 south-west", gs.relative(800, 1200));
+        assertEquals("right next to you", gs.relative(1010, 995));
+        gs.reset();
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

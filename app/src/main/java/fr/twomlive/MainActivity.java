@@ -146,8 +146,8 @@ public class MainActivity extends Activity implements GameState.Listener {
         alertRow.addView(voice);
         Button test = new Button(this);
         test.setText("Test");
-        test.setOnClickListener(v -> alerter.fire("Test alert", "ID 8ee6a91c at (2267,1240)",
-                "Test alert. Imp spawned at 2267, 1240"));
+        test.setOnClickListener(v -> alerter.fire("Test alert: Imp spawned - 300 north-east",
+                "ID 8ee6a91c at (2267,1240)", "Test alert. Imp spawned, 300 north-east"));
         alertRow.addView(test);
         android.widget.HorizontalScrollView alertScroll = new android.widget.HorizontalScrollView(this);
         alertScroll.addView(alertRow);

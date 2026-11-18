@@ -64,8 +64,12 @@ public final class Alerter implements GameState.AlertListener {
     @Override
     public void onMatch(TwomDecoder.Entity e, boolean spawned) {
         String what = e.name + (spawned ? " spawned" : " in view");
-        fire(what, "ID " + e.id + " at (" + e.x + "," + e.y + ")",
-                what + " at " + e.x + ", " + e.y);
+        String rel = GameState.INSTANCE.relative(e.x, e.y);   // ex. "300 north-east"
+        if (rel != null) {
+            fire(what + " - " + rel, "ID " + e.id + " at (" + e.x + "," + e.y + ")", what + ", " + rel);
+        } else {
+            fire(what, "ID " + e.id + " at (" + e.x + "," + e.y + ")", what + " at " + e.x + ", " + e.y);
+        }
     }
 
     /** declenche l'alerte avec les moyens choisis */

@@ -49,6 +49,23 @@ public final class GameState {
 
     synchronized void setSelf(long x, long y) { hasSelf = true; selfX = (int) x; selfY = (int) y; }
 
+    static final String[] DIRS = {"east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east"};
+
+    /**
+     * Ou se trouve (x,y) par rapport a toi, ex. "300 north-east" ; null si ta position est inconnue.
+     * Le nord est en haut de l'ecran (y plus petit).
+     */
+    public synchronized String relative(int x, int y) {
+        if (!hasSelf) return null;
+        double dx = x - selfX, dy = selfY - y;          // dy > 0 = vers le haut = nord
+        double d = Math.hypot(dx, dy);
+        if (d < 30) return "right next to you";
+        int sector = (int) Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
+        sector = ((sector % 8) + 8) % 8;
+        long dist = Math.round(d / 10.0) * 10;
+        return dist + " " + DIRS[sector];
+    }
+
     /** connexion au jeu fermee : plus rien n'est en vue */
     public synchronized void clearView() {
         inView.clear(); mobs.clear(); hits.clear(); alerted.clear(); hasSelf = false;
@@ -82,8 +99,10 @@ public final class GameState {
             if (!alerted.add(e.id)) return;          // une seule alerte tant qu'il reste en vue
         }
         String lvl = e.lvl != null ? " (lvl " + e.lvl + ")" : "";
-        log(ALERTE, "ALERT: " + e.name + lvl + (spawned ? " spawned" : " in view") + " at (" + e.x + "," + e.y + ") - ID " + e.id,
-                new Object[]{"alert", e.id, e.name, e.lvl, e.x, e.y, spawned ? "spawned" : "in view"});
+        String rel = relative(e.x, e.y);
+        String where = rel != null ? " - " + rel : "";
+        log(ALERTE, "ALERT: " + e.name + lvl + (spawned ? " spawned" : " in view") + " at (" + e.x + "," + e.y + ")" + where + " - ID " + e.id,
+                new Object[]{"alert", e.id, e.name, e.lvl, e.x, e.y, (spawned ? "spawned" : "in view") + (rel != null ? ", " + rel : "")});
         for (AlertListener l : alertListeners) {
             try { l.onMatch(e, spawned); } catch (RuntimeException ignored) { }
         }
