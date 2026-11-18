@@ -176,7 +176,8 @@ public final class GameState {
     }
 
     static boolean isId(byte[] m, int i) {
-        return i + 4 <= m.length && (m[i] & 0xf8) == 0x88 && (m[i + 1] & 0x80) != 0
+        int b0 = i < m.length ? m[i] & 0xff : 0;
+        return i + 4 <= m.length && b0 >= TwomDecoder.ID_MIN && b0 <= TwomDecoder.ID_MAX && (m[i + 1] & 0x80) != 0
                 && (m[i + 2] & 0x80) != 0 && (m[i + 3] & 0x80) == 0;
     }
 

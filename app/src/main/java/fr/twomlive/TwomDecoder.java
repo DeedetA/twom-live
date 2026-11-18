@@ -196,8 +196,15 @@ public final class TwomDecoder {
         return new long[]{neg ? -v : v, i};
     }
 
+    /**
+     * Identifiant d'entite = entier sur 4 octets (varint). Le serveur les numerote avec un compteur
+     * qui ne fait que monter : le premier octet est passe de 0x8b (novembre) a 0x91. On accepte
+     * donc une large plage ; 0x84 et moins restent exclus (autres champs de 4 octets).
+     */
+    public static final int ID_MIN = 0x88, ID_MAX = 0xbf;
+
     static final Pattern REC = Pattern.compile(
-            "(?=([\\x88-\\x8f][\\x80-\\xff][\\x80-\\xff][\\x00-\\x7f])([\\x80-\\xbf][\\x00-\\x7f])([\\x80-\\xbf][\\x00-\\x7f]))",
+            "(?=([\\x88-\\xbf][\\x80-\\xff][\\x80-\\xff][\\x00-\\x7f])([\\x80-\\xbf][\\x00-\\x7f])([\\x80-\\xbf][\\x00-\\x7f]))",
             Pattern.DOTALL);
     static final Pattern NAME = Pattern.compile(
             "([\\x80-\\xff]*[\\x00-\\x7f])([\\x02-\\x40])((?:[\\x20-\\x7e]\\x00)+)", Pattern.DOTALL);

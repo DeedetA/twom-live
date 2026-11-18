@@ -168,6 +168,68 @@ public class DecoderTest {
         assertNull(gs.self());
     }
 
+    /** cle d'une trame serveur, comme le decodeur la trouve */
+    static int serverKey(byte[] p) {
+        int k0 = TwomDecoder.guessKey(p);
+        byte[] x = TwomDecoder.dec(p, k0);
+        if (x[0] == 0x23 && TwomDecoder.splitBatch(TwomDecoder.sub(x, 0, x.length - 1)) != null) return k0;
+        for (int k = 0; k < 256; k++) {
+            byte[] y = TwomDecoder.dec(p, k);
+            if (y[0] == 0x23 && TwomDecoder.splitBatch(TwomDecoder.sub(y, 0, y.length - 1)) != null) return k;
+        }
+        return k0;
+    }
+
+    /** meme capture, mais avec des identifiants d'entite qui commencent par 0x91 au lieu de 0x8b */
+    static byte[] shiftIds(byte[] stream) {
+        java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
+        for (int i = 0; i + 2 <= stream.length; ) {
+            int L = ((stream[i] & 0xff) << 8) | (stream[i + 1] & 0xff);
+            byte[] p = TwomDecoder.sub(stream, i + 2, i + L);
+            i += L;
+            if (p.length > 2) {
+                int k = serverKey(p);
+                byte[] x = TwomDecoder.dec(p, k);
+                for (int j = 0; j + 4 <= x.length - 1; j++) {
+                    int b0 = x[j] & 0xff;
+                    if (b0 >= 0x88 && b0 <= 0x8f && (x[j + 1] & 0x80) != 0 && (x[j + 2] & 0x80) != 0 && (x[j + 3] & 0x80) == 0) {
+                        x[j] = (byte) (b0 + 6);       // 0x8b -> 0x91
+                        j += 3;
+                    }
+                }
+                p = encrypt(x, k);
+            }
+            o.write(L >> 8);
+            o.write(L);
+            o.write(p, 0, p.length);
+        }
+        return o.toByteArray();
+    }
+
+    @Test
+    public void identifiantsQuiOntGrandi() throws Exception {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        gs.setWatch("dark beholder");
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        GameState.AlertListener l = (e, spawned) -> seen.add(e.id);
+        gs.addAlertListener(l);
+        try {
+            byte[] d = shiftIds(capture());
+            GameState.Stream s = new GameState.Stream(gs, "test");
+            for (int i = 0; i < d.length; i += 900) s.feed(d, i, Math.min(900, d.length - i));
+            assertTrue(s.isGame());
+            assertEquals(6, gs.deaths);
+            String all = String.join("\n", gs.lines());
+            assertTrue(all, all.contains("Imp died at (3484,1505) - killed by Minxie"));
+            assertFalse(seen.isEmpty());
+            for (String id : seen) assertTrue(id, id.startsWith("91"));
+        } finally {
+            gs.removeAlertListener(l);
+            gs.setWatch("");
+        }
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();
