@@ -47,7 +47,7 @@ public final class Alerter implements GameState.AlertListener {
         ctx = c;
         prefs = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel ch = new NotificationChannel(CHANNEL, "Spawn alerts", NotificationManager.IMPORTANCE_HIGH);
+            NotificationChannel ch = new NotificationChannel(CHANNEL, "Mob alerts", NotificationManager.IMPORTANCE_HIGH);
             ch.setDescription("Alerts when a watched name appears");
             ch.enableVibration(false);   // la vibration est geree a part, selon le choix de l'utilisateur
             ctx.getSystemService(NotificationManager.class).createNotificationChannel(ch);

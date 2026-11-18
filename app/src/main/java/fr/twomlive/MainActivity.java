@@ -105,7 +105,7 @@ public class MainActivity extends Activity implements GameState.Listener {
 
         // ------------------------------------------------ alerte d'apparition
         TextView at = new TextView(this);
-        at.setText("Spawn alert");
+        at.setText("Mob alert");
         at.setTypeface(Typeface.DEFAULT_BOLD);
         at.setPadding(0, dp(6), 0, 0);
         root.addView(at);
