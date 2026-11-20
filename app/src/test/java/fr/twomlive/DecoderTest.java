@@ -455,6 +455,30 @@ public class DecoderTest {
         assertTrue(all, l.get(2).endsWith("Map loaded"));
     }
 
+    @Test
+    public void deplacementsCaseMoves() {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        gs.showMoves = true;
+        try {
+            // trames reelles : une entite part vers le nord a 80/s, puis s'arrete 21 unites plus loin
+            gs.message(hexBytes("43 41 87 6f 00 96 94 a3 4d 8c 0a 00 c0 50 00 00 00 00 00 00 00 00"));
+            gs.message(hexBytes("43 41 87 6f 00 96 94 a3 4d 8b 75 00 00 00 00 00 00 00 00 00 00"));
+            // et une autre vers l'ouest a 83/s
+            gs.message(hexBytes("43 00 88 04 c0 53 96 97 8e 1b 88 28 41 00 00 00 00 00 00 00 00 00"));
+        } finally {
+            gs.showMoves = false;
+        }
+        gs.message(hexBytes("43 00 88 04 c0 53 96 97 8e 1b 88 28 41 00 00 00 00 00 00 00 00 00"));   // case decochee
+        java.util.List<String> l = gs.lines();
+        String all = String.join("\n", l);
+        assertEquals(all, 3, l.size());
+        assertTrue(all, l.get(0).endsWith("#9694a34d at (1007,1546), facing north, moving at 80/s"));
+        assertTrue(all, l.get(1).contains("#9694a34d (1007,1546) -> (1007,1525), moved 21 in "));
+        assertTrue(all, l.get(1).endsWith(", facing north, stopped"));
+        assertTrue(all, l.get(2).endsWith("#96978e1b at (1028,1064), facing west, moving at 83/s"));
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

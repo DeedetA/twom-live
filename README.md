@@ -31,6 +31,9 @@ connections as they are and reads the game server stream along the way.
 - **NPCs and gold**: "You talk to NPC #1170", "You sell item #150193 x1 (bag 1, slot 5) to
   NPC #1170", "NPC #1170 offers 500 gold", "You buy article #20 from NPC #1158",
   "You choose option 404 (NPC #1178)", and every change of your gold ("Gold +500", "Gold -495").
+- **Moves** (checkbox): every movement around you — who moves, from where to where, how far and how
+  fast, facing which way ("Roopa #9694a34d (1007,1546) -> (1007,1525), moved 21 in 0.64 s, facing
+  north, stopped").
 - **Map loading**: "Map loading..." / "Map loaded" at login and after every teleport.
 - **Chat**: show or hide chat messages, including what you write ("You say: hi").
 - **Sent**: show what your phone sends (attacks, skills).

@@ -24,6 +24,8 @@ public final class GameState {
     public volatile boolean showChat = true;
     public volatile boolean verbose = false;
     public volatile boolean showSent = true;
+    /** case "Moves" : detail de chaque deplacement (qui, d'ou, ou, sens, vitesse) */
+    public volatile boolean showMoves = false;
 
     // ------------------------------------------------------------ mode "Raw" : tous les messages
     /** recoit chaque ligne brute (fichier d'enregistrement cote Android) */
@@ -84,6 +86,63 @@ public final class GameState {
         int op = m[0] & 0xff;
         String name = SERVER_OPS.get(op);
         rawLine(true, String.format(Locale.US, "%02x %s (%d B)", op, name != null ? name : "?", m.length), m, m.length, null);
+    }
+
+    // ------------------------------------------------------------ deplacements (case Moves)
+    // [43][sens Y][X][vitesse X][ID][Y][sens X][vitesse Y]  (sens : -1, 0 ou +1 ; vitesse en unites/s)
+    private final Map<String, long[]> lastMove = new HashMap<>();   // id -> {x, y, heure}
+
+    static String facing(long dx, long dy) {
+        if (dy < 0) return "north";
+        if (dy > 0) return "south";
+        if (dx > 0) return "east";
+        if (dx < 0) return "west";
+        return "?";
+    }
+
+    /**
+     * Decrit un message 0x43 : qui bouge, d'ou a ou (position connue juste avant -> position du message),
+     * sens et vitesse. Appele avant que la position soit mise a jour.
+     */
+    synchronized String moveInfo(byte[] m) {
+        long[] v = TwomDecoder.varint(m, 1, true);
+        long dirY = v[0];
+        v = TwomDecoder.varint(m, (int) v[1], true); long x = v[0];
+        v = TwomDecoder.varint(m, (int) v[1], true); long vx = v[0];
+        int i = (int) v[1];
+        if (!isId(m, i)) return null;
+        String id = TwomDecoder.hex(m, i, 4);
+        v = TwomDecoder.varint(m, i + 4, true); long y = v[0];
+        v = TwomDecoder.varint(m, (int) v[1], true); long dirX = v[0];
+        v = TwomDecoder.varint(m, (int) v[1], true); long vy = v[0];
+
+        String who;
+        long[] last = lastMove.get(id);
+        long[] from = last != null ? new long[]{last[0], last[1]} : null;
+        TwomDecoder.Entity e = mobs.get(id);
+        if (e == null) e = ents.get(id);
+        if (id.equals(selfId)) {
+            who = "You";
+            if (from == null && hasSelf) from = new long[]{selfX, selfY};
+        } else {
+            who = (e != null && e.name != null ? e.name + " " : "") + "#" + id;
+            if (from == null && e != null) from = new long[]{e.x, e.y};
+        }
+        StringBuilder sb = new StringBuilder(who).append(' ');
+        if (from != null && (from[0] != x || from[1] != y)) {
+            sb.append("(").append(from[0]).append(",").append(from[1]).append(") -> (").append(x).append(",").append(y).append(")");
+            long dist = Math.round(Math.hypot(x - from[0], y - from[1]));
+            sb.append(", moved ").append(dist);
+            if (last != null) sb.append(String.format(Locale.US, " in %.2f s", (now() - last[2]) / 1000.0));
+        } else {
+            sb.append("at (").append(x).append(",").append(y).append(")");
+        }
+        long speed = Math.max(Math.abs(vx), Math.abs(vy));
+        sb.append(", facing ").append(facing(dirX, dirY));
+        sb.append(speed == 0 ? ", stopped" : ", moving at " + speed + "/s");
+        lastMove.put(id, new long[]{x, y, now()});
+        if (lastMove.size() > 2000) lastMove.clear();
+        return sb.toString();
     }
 
     /** message envoye par le telephone ; frame = trame chiffree si le dechiffrement a echoue */
@@ -151,6 +210,7 @@ public final class GameState {
 
     /** connexion au jeu fermee : plus rien n'est en vue */
     public synchronized void clearView() {
+        lastMove.clear();
         inView.clear(); mobs.clear(); hits.clear(); alerted.clear(); hasSelf = false;
         for (Listener l : listeners) l.onMobsChanged();
     }
@@ -220,7 +280,7 @@ public final class GameState {
     public synchronized void reset() {
         ents.clear(); mobs.clear(); hits.clear(); lines.clear(); alerted.clear(); inView.clear(); hasSelf = false;
         recentDeaths.clear(); deaths = 0; attacksSent = 0; selfId = null;
-        loading = false; loadingUntil = 0;
+        loading = false; loadingUntil = 0; lastMove.clear();
         csv.setLength(0);
         csv.append("time;event;id;name;level;x;y;detail\n");
         for (Listener l : listeners) l.onMobsChanged();
@@ -366,7 +426,7 @@ public final class GameState {
                     i += 4;
                     long y = TwomDecoder.varint(m, i, true)[0];
                     setSelf(xv[0], y);
-                    if (showSent && verbose) log(ENVOYE, "You move to (" + xv[0] + "," + y + ")", null);
+                    if (showMoves) log(ENVOYE, "You move to (" + xv[0] + "," + y + ")", null);
                     break;
                 }
                 case 0x27:
@@ -461,7 +521,13 @@ public final class GameState {
         try {
             switch (op) {
                 case 0xd6: case 0x46: apparition(m, op); break;
-                case 0x43: deplacement(m); break;
+                case 0x43: {
+                    String info = null;
+                    try { info = moveInfo(m); } catch (RuntimeException ignored) { }   // avant la mise a jour des positions
+                    if (showMoves && info != null) log(RECU, info, null);
+                    deplacement(m);
+                    break;
+                }
                 case 0x4d: attaque(m); break;
                 case 0x49: mort(m); break;
                 case 0x47: retrait(m); break;
@@ -636,10 +702,7 @@ public final class GameState {
             mob = mobs.get(id);
             if (mob != null) { mob.x = x; mob.y = y; }
         }
-        if (mob != null) {
-            if (verbose) log(RECU, mob.name + " moves to (" + x + "," + y + ")", null);
-            mobsChanged();
-        }
+        if (mob != null) mobsChanged();
     }
 
     private void attaque(byte[] m) {

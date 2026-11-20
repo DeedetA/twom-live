@@ -102,6 +102,15 @@ public class MainActivity extends Activity implements GameState.Listener {
         details.setChecked(gs.verbose);
         details.setOnCheckedChangeListener((c, on) -> gs.verbose = on);
         opts.addView(details);
+        CheckBox moves = new CheckBox(this);
+        moves.setText("Moves");
+        moves.setChecked(prefs.getBoolean("moves", false));
+        gs.showMoves = moves.isChecked();
+        moves.setOnCheckedChangeListener((c, on) -> {
+            prefs.edit().putBoolean("moves", on).apply();
+            gs.showMoves = on;
+        });
+        opts.addView(moves);
         CheckBox rawBox = new CheckBox(this);
         rawBox.setText("Raw");
         rawBox.setChecked(prefs.getBoolean("raw", false));
