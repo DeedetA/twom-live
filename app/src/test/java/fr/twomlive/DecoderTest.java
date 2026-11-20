@@ -430,6 +430,31 @@ public class DecoderTest {
         assertTrue(all, l.get(10).endsWith("Gold -495"));
     }
 
+    @Test
+    public void chatEnvoyeEtChargementDeMap() {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        // trames reelles : "hi" ecrit dans le chat, puis la serie de chargement apres une teleportation
+        byte[] hi = TwomDecoder.decodeClientFrame(hexBytes("ce 3d 9d 10 1d 30 1d d2"));
+        assertNotNull(hi);
+        assertEquals(0x9e, hi[0] & 0xff);
+        gs.clientMessage(hi);
+        String[] loadFrames = {"1e ab 33 f0 83 fc 8d 08 8b 88 80", "85 32 aa 69 11 e8"};
+        for (String f : loadFrames) {
+            byte[] p = hexBytes(f);
+            assertNull(f, TwomDecoder.decodeClientFrame(p, null));
+            assertTrue(f, gs.isMapLoading(p));
+            gs.clientUndecoded(p);
+        }
+        gs.clientMessage(hexBytes("67 96 99 8d 02"));
+        java.util.List<String> l = gs.lines();
+        String all = String.join("\n", l);
+        assertEquals(all, 3, l.size());
+        assertTrue(all, l.get(0).endsWith("You say: hi"));
+        assertTrue(all, l.get(1).endsWith("Map loading..."));
+        assertTrue(all, l.get(2).endsWith("Map loaded"));
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

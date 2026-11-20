@@ -118,7 +118,7 @@ public final class TwomDecoder {
     // ------------------------------------------------------------ sens telephone -> serveur
     static final boolean[] C2S_OPS = new boolean[256];
     static {
-        for (int op : new int[]{0x0f, 0x27, 0x43, 0x4f, 0x67, 0x68, 0x69, 0x7e, 0x91, 0xa4, 0xa8, 0xca}) C2S_OPS[op] = true;
+        for (int op : new int[]{0x0f, 0x27, 0x43, 0x4f, 0x67, 0x68, 0x69, 0x7e, 0x91, 0x9e, 0xa4, 0xa8, 0xca}) C2S_OPS[op] = true;
     }
     static byte[] decR(byte[] p, int k, int r) {
         byte[] o = new byte[p.length];
@@ -167,6 +167,8 @@ public final class TwomDecoder {
             case 0x7e: return x.length == 7;
             case 0xa4: return x.length >= 12 && x[1] == 0x0d && isIdAt(x, 2) && x[6] == 0;
             case 0x91: return x.length >= 8 && isIdAt(x, 2);
+            // [9e][canal][longueur en octets][texte UTF-16] : ton message de chat
+            case 0x9e: return x.length >= 5 && (x[1] & 0xff) < 0x20 && (x[2] & 0xff) == x.length - 3 && (x[2] & 1) == 0;
             case 0x67: return x.length == 5 && isIdAt(x, 1);
             case 0xca: return x.length == 6 && x[1] == 7 && isIdAt(x, 2);
             case 0x0f: return x.length == 6 && x[1] == 1 && isIdAt(x, 2);

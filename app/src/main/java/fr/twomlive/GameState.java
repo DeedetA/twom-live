@@ -50,7 +50,7 @@ public final class GameState {
         for (Object[] o : s) SERVER_OPS.put((Integer) o[0], (String) o[1]);
         Object[][] c = {{0x27, "login"}, {0x43, "move"}, {0x4f, "attack/skill"}, {0x68, "ping"},
                 {0x69, "request"}, {0x7e, "client version"}, {0xa4, "use item"}, {0xa8, "UI action"},
-                {0x91, "NPC dialog"}, {0x67, "enter map"}, {0xca, "enter map"}, {0x0f, "enter map"}};
+                {0x91, "NPC dialog"}, {0x9e, "chat"}, {0x67, "enter map"}, {0xca, "enter map"}, {0x0f, "enter map"}};
         for (Object[] o : c) CLIENT_OPS.put((Integer) o[0], (String) o[1]);
     }
 
@@ -90,7 +90,8 @@ public final class GameState {
     public void rawClient(byte[] m, byte[] frame) {
         if (!raw) return;
         if (m == null) {
-            rawLine(false, String.format(Locale.US, "?? undecoded (%d B, encrypted)", frame.length), frame, frame.length, null);
+            String what = isMapLoading(frame) ? "map loading" : "undecoded";
+            rawLine(false, String.format(Locale.US, "?? %s (%d B, encrypted)", what, frame.length), frame, frame.length, null);
             return;
         }
         if (m.length == 0) return;
@@ -219,6 +220,7 @@ public final class GameState {
     public synchronized void reset() {
         ents.clear(); mobs.clear(); hits.clear(); lines.clear(); alerted.clear(); inView.clear(); hasSelf = false;
         recentDeaths.clear(); deaths = 0; attacksSent = 0; selfId = null;
+        loading = false; loadingUntil = 0;
         csv.setLength(0);
         csv.append("time;event;id;name;level;x;y;detail\n");
         for (Listener l : listeners) l.onMobsChanged();
@@ -283,6 +285,34 @@ public final class GameState {
         int b0 = i < m.length ? m[i] & 0xff : 0;
         return i + 4 <= m.length && b0 >= TwomDecoder.ID_MIN && b0 <= TwomDecoder.ID_MAX && (m[i + 1] & 0x80) != 0
                 && (m[i + 2] & 0x80) != 0 && (m[i + 3] & 0x80) == 0;
+    }
+
+    // ------------------------------------------------------------ chargement de map
+    // A chaque connexion ou changement de map, le telephone envoie une petite serie de messages
+    // chiffres trop courts pour etre dechiffres (11, 6, 3 et 5 octets). On les reconnait au contexte.
+    private long loadingUntil = 0;
+    private boolean loading = false;
+
+    long now() { return System.currentTimeMillis(); }
+
+    private synchronized void startLoading() {
+        loadingUntil = now() + 8000;
+        if (!loading) { loading = true; log(SYSTEME, "Map loading...", null); }
+    }
+
+    /** vrai si cette trame illisible fait partie d'un chargement de map */
+    public synchronized boolean isMapLoading(byte[] frame) {
+        if (frame.length == 11) return true;
+        return frame.length <= 11 && now() <= loadingUntil;
+    }
+
+    /** une trame du telephone qu'on n'a pas pu dechiffrer */
+    public void clientUndecoded(byte[] frame) {
+        if (isMapLoading(frame)) {
+            if (frame.length == 11) startLoading();
+        } else if (showSent && verbose) {
+            log(ENVOYE, "Undecoded message (" + frame.length + " B)", null);
+        }
     }
 
     /** un message clair envoye par le telephone au serveur */
@@ -390,7 +420,24 @@ public final class GameState {
                     }
                     break;
                 }
+                case 0x67:
+                    // arrivee sur la map : le chargement se termine dans les secondes qui suivent
+                    synchronized (this) {
+                        if (loading) { loading = false; log(SYSTEME, "Map loaded", null); }
+                        loadingUntil = now() + 4000;
+                    }
+                    break;
+                case 0x9e: {
+                    // [9e][canal][longueur][texte UTF-16] : ce que tu ecris dans le chat
+                    if (!showChat || !showSent) break;
+                    int len = m[2] & 0xff;
+                    String txt = new String(m, 3, Math.min(len, m.length - 3), java.nio.charset.StandardCharsets.UTF_16LE);
+                    int ch = m[1] & 0xff;
+                    log(ENVOYE, "You say" + (ch != 1 ? " (channel " + ch + ")" : "") + ": " + txt, null);
+                    break;
+                }
                 case 0x7e:
+                    startLoading();
                     if (showSent && verbose) log(ENVOYE, "Client version sent", null);
                     break;
                 case 0x68:
@@ -731,7 +778,8 @@ public final class GameState {
         private void client(byte[] frame) {
             byte[] m = TwomDecoder.decodeClientFrame(frame, gs.selfIdHex());
             gs.rawClient(m, frame);
-            gs.clientMessage(m);
+            if (m == null) gs.clientUndecoded(frame);
+            else gs.clientMessage(m);
         }
 
         private void process(byte[] frame) {
