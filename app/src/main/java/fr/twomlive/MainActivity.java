@@ -22,6 +22,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
+import java.util.Locale;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -214,17 +215,37 @@ public class MainActivity extends Activity implements GameState.Listener {
         exportRaw.setOnClickListener(v -> {
             RawRecorder rec = RawRecorder.get(this);
             rec.flush();
-            if (rec.file().length() == 0) {
+            if (rec.size() == 0) {
                 Toast.makeText(this, "Nothing recorded yet: tick Raw, then play", Toast.LENGTH_LONG).show();
                 return;
             }
-            Intent s = new Intent(Intent.ACTION_SEND);
-            s.setType("text/plain");
-            s.putExtra(Intent.EXTRA_STREAM, RawFileProvider.RAW_URI);
-            s.putExtra(Intent.EXTRA_SUBJECT, "TWOM Live - raw messages");
-            s.setClipData(android.content.ClipData.newRawUri("raw", RawFileProvider.RAW_URI));
-            s.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(s, "Share the raw file"));
+            exportRaw.setEnabled(false);
+            Toast.makeText(this, String.format(Locale.US, "Zipping %.1f MB...", rec.size() / 1048576.0), Toast.LENGTH_SHORT).show();
+            new Thread(() -> {
+                long raw;
+                try {
+                    raw = rec.makeZip();
+                } catch (java.io.IOException e) {
+                    runOnUiThread(() -> {
+                        exportRaw.setEnabled(true);
+                        Toast.makeText(this, "Could not create the zip: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    });
+                    return;
+                }
+                long zipped = rec.zipFile().length();
+                runOnUiThread(() -> {
+                    exportRaw.setEnabled(true);
+                    Toast.makeText(this, String.format(Locale.US, "%.1f MB zipped to %.1f MB", raw / 1048576.0, zipped / 1048576.0),
+                            Toast.LENGTH_LONG).show();
+                    Intent s = new Intent(Intent.ACTION_SEND);
+                    s.setType("application/zip");
+                    s.putExtra(Intent.EXTRA_STREAM, RawFileProvider.RAW_URI);
+                    s.putExtra(Intent.EXTRA_SUBJECT, "TWOM Live - raw messages");
+                    s.setClipData(android.content.ClipData.newRawUri("raw", RawFileProvider.RAW_URI));
+                    s.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivity(Intent.createChooser(s, "Share the raw file"));
+                });
+            }, "raw-zip").start();
         });
         row2.addView(exportRaw);
         row2.addView(clear);

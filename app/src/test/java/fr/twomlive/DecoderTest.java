@@ -479,6 +479,39 @@ public class DecoderTest {
         assertTrue(all, l.get(2).endsWith("#96978e1b at (1028,1064), facing west, moving at 83/s"));
     }
 
+    @Test
+    public void enregistrementLongEtZip() throws Exception {
+        java.io.File dir = java.nio.file.Files.createTempDirectory("raw").toFile();
+        // petits morceaux pour le test : 1 Ko par morceau, 5 Ko au total
+        RawStore st = new RawStore(new java.io.File(dir, "raw"), 1024, 5 * 1024, 0);
+        StringBuilder all = new StringBuilder();
+        for (int i = 0; i < 400; i++) {
+            String l = String.format(java.util.Locale.US, "21:41:%02d.%03d <- 43 move (22 B)  43 00 88 04 #%04d", i % 60, i, i);
+            st.write(l);
+            all.append(l).append('\n');
+        }
+        java.io.File[] segs = st.segments();
+        assertTrue("plusieurs morceaux", segs.length > 3);
+        assertTrue("place limitee : " + st.size(), st.size() <= 5 * 1024 + 1024 + 100);
+        java.io.File zip = new java.io.File(dir, "t.zip");
+        long n = st.zipTo(zip);
+        String unz;
+        try (java.util.zip.ZipInputStream z = new java.util.zip.ZipInputStream(new java.io.FileInputStream(zip))) {
+            java.util.zip.ZipEntry e = z.getNextEntry();
+            assertEquals(RawStore.ZIP_ENTRY, e.getName());
+            unz = new String(z.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assertNull(z.getNextEntry());
+        }
+        assertEquals(n, unz.length());
+        // on garde la fin de la seance, sans trou ni ligne coupee
+        assertTrue(all.toString().endsWith(unz));
+        assertTrue(unz.endsWith("#0399\n"));
+        assertTrue(unz.startsWith("21:41:"));
+        assertTrue("compresse", zip.length() < n);
+        st.clear();
+        assertEquals(0, st.size());
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

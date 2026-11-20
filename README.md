@@ -37,9 +37,13 @@ connections as they are and reads the game server stream along the way.
 - **Map loading**: "Map loading..." / "Map loaded" at login and after every teleport.
 - **Chat**: show or hide chat messages, including what you write ("You say: hi").
 - **Sent**: show what your phone sends (attacks, skills).
-- **Details**: adds mob movements, hits, players in view and diagnostics.
+- **Details**: adds hits, players in view and diagnostics.
 - **Raw**: logs every message in both directions (`<-` received, `->` sent) with its type,
-  size and decrypted content in hex, and records it to a file. **Raw file** shares that file.
+  size and decrypted content in hex, and records it. The recording is made for long sessions:
+  it is split into 16 MB pieces and keeps up to 400 MB (more than 30 hours on a very busy map,
+  about 12 MB per hour); past that, only the oldest pieces are dropped. It stops if less than
+  200 MB is free on the phone. **Raw file** joins everything into one `twom_raw.txt`, zips it
+  (about 7 times smaller) and opens the share menu. **Clear** deletes the recording.
   Two things are never shown or recorded: the content of the login message (it may hold your
   session token) and the ~2 KB anti-cheat block attached to each attack (only its size).
   Type names ending with "?" were inferred from captures and are not certain yet.
