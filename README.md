@@ -30,6 +30,7 @@ connections as they are and reads the game server stream along the way.
   size and decrypted content in hex, and records it to a file. **Raw file** shares that file.
   Two things are never shown or recorded: the content of the login message (it may hold your
   session token) and the ~2 KB anti-cheat block attached to each attack (only its size).
+  Type names ending with "?" were inferred from captures and are not certain yet.
 - **Log colors**: green = received from the server, blue = sent by your phone,
   red = drops (gold dropped and picked up), grey = app messages.
 - **Share**: sends the full log plus the events as CSV.

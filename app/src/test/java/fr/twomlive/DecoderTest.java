@@ -298,6 +298,30 @@ public class DecoderTest {
         }
     }
 
+    @Test
+    public void competenceCibleeEtExperience() {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        // en-tete reel du fichier Raw : competence 3 sur 95f9e243, puis remplissage repete
+        byte[] head = {0x4f, 0x00, 0x01, (byte) 0x8b, 0x49, 0x00, 0x00, (byte) 0x91, 0x38, 0x0a, 0x03,
+                (byte) 0x95, (byte) 0xf9, (byte) 0xe2, 0x43};
+        byte[] m = new byte[2062];
+        System.arraycopy(head, 0, m, 0, head.length);
+        byte[] fill = {0x75, 0x3b, (byte) 0xe3, 0x3f};
+        for (int i = head.length; i < m.length; i++) m[i] = fill[(i - head.length) % 4];
+        gs.clientMessage(m);
+        // meme competence sans cible : le remplissage suit directement, meme s'il ressemble a un ID
+        byte[] m2 = m.clone();
+        byte[] fakeId = {(byte) 0x95, (byte) 0xa1, (byte) 0xb2, 0x33};
+        for (int i = 11; i < m2.length; i++) m2[i] = fakeId[(i - 11) % 4];
+        gs.clientMessage(m2);
+        gs.message(new byte[]{(byte) 0x8c, (byte) 0x80, 0x4e});
+        java.util.List<String> l = gs.lines();
+        assertTrue(l.toString(), l.get(0).contains("You cast skill #3 on ?95f9e243"));
+        assertTrue(l.toString(), l.get(1).contains("You cast skill #3 from") && !l.get(1).contains(" on "));
+        assertTrue(l.toString(), l.get(2).endsWith("+78 EXP"));
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

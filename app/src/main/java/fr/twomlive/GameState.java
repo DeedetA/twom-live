@@ -37,11 +37,16 @@ public final class GameState {
     static final Map<Integer, String> SERVER_OPS = new HashMap<>();
     static final Map<Integer, String> CLIENT_OPS = new HashMap<>();
     static {
-        Object[][] s = {{0x0a, "character list"}, {0x2b, "handshake"}, {0x43, "move"}, {0x46, "spawn"},
-                {0x47, "remove"}, {0x49, "death"}, {0x4d, "attack"}, {0x5b, "effect"}, {0x5e, "map info"},
-                {0x62, "character info"}, {0x6c, "update"}, {0x7a, "server url"}, {0xa0, "chat"},
-                {0xa4, "status"}, {0xa9, "player info"}, {0xaa, "status"}, {0xbc, "system message"},
-                {0xd6, "entities in view"}};
+        // "?" = deduit par recoupement, pas encore certain
+        Object[][] s = {{0x0a, "character list"}, {0x2b, "handshake"}, {0x43, "move"}, {0x45, "server time"},
+                {0x46, "spawn"}, {0x47, "remove"}, {0x49, "death"}, {0x4d, "attack"}, {0x57, "timers?"},
+                {0x5a, "ack"}, {0x5b, "effect"}, {0x5c, "stat update?"}, {0x5e, "map info"},
+                {0x62, "character info"}, {0x64, "enter map"}, {0x66, "ack"}, {0x6c, "update"},
+                {0x7a, "server url"}, {0x86, "kill update?"}, {0x8c, "exp gained"}, {0x91, "map portals"},
+                {0x95, "pet info"}, {0x9a, "map data"}, {0xa0, "chat"}, {0xa4, "status"}, {0xa6, "combat state?"},
+                {0xa9, "player info"}, {0xaa, "status"}, {0xac, "guild/friends list"}, {0xb3, "pet update"},
+                {0xbc, "system message"}, {0xca, "character state"}, {0xd6, "entities in view"},
+                {0xd7, "mob target?"}};
         for (Object[] o : s) SERVER_OPS.put((Integer) o[0], (String) o[1]);
         Object[][] c = {{0x27, "login"}, {0x43, "move"}, {0x4f, "attack/skill"}, {0x68, "ping"},
                 {0x69, "request"}, {0x7e, "client version"}, {0xa8, "UI action"}};
@@ -297,7 +302,11 @@ public final class GameState {
                     long[] xv = TwomDecoder.varint(m, i, true); i = (int) xv[1];
                     int skill = m[i + 1] & 0xff;
                     i += 2;
-                    String tgt = (skill == 0 && isId(m, i)) ? TwomDecoder.hex(m, i, 4) : null;
+                    // une cible peut suivre (attaque de base ou competence ciblee) ; le remplissage, lui,
+                    // repete le meme motif de 4 octets : on ne le confond pas avec un identifiant
+                    boolean filler = i + 8 <= m.length && m[i] == m[i + 4] && m[i + 1] == m[i + 5]
+                            && m[i + 2] == m[i + 6] && m[i + 3] == m[i + 7];
+                    String tgt = (isId(m, i) && !filler) ? TwomDecoder.hex(m, i, 4) : null;
                     String tname;
                     setSelf(xv[0], yv[0]);
                     synchronized (this) {
@@ -309,8 +318,9 @@ public final class GameState {
                         log(ENVOYE, "You attack " + (tname != null ? tname : "your target") + " (basic attack)",
                                 new Object[]{"attack_sent", tgt, tname, "", xv[0], yv[0], "basic attack"});
                     } else {
-                        log(ENVOYE, "You cast skill #" + skill + " from (" + xv[0] + "," + yv[0] + ")",
-                                new Object[]{"skill_sent", "", "", "", xv[0], yv[0], "skill " + skill});
+                        String on = tname != null ? " on " + tname : "";
+                        log(ENVOYE, "You cast skill #" + skill + on + " from (" + xv[0] + "," + yv[0] + ")",
+                                new Object[]{"skill_sent", tgt, tname, "", xv[0], yv[0], "skill " + skill});
                     }
                     break;
                 }
@@ -356,6 +366,12 @@ public final class GameState {
                 case 0x4d: attaque(m); break;
                 case 0x49: mort(m); break;
                 case 0x47: retrait(m); break;
+                case 0x8c: {
+                    // [8c][varint] : experience gagnee, arrive juste apres tes kills
+                    long xp = TwomDecoder.varint(m, 1, false)[0];
+                    log(RECU, "+" + xp + " EXP", new Object[]{"exp", "", "", "", "", "", xp});
+                    break;
+                }
                 case 0x62:
                     // [62 00 00][id] : identifiant de ton personnage, envoye a la connexion
                     if (m.length == 7 && m[1] == 0 && m[2] == 0) {
