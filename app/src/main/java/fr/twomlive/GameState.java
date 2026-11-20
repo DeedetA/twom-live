@@ -39,17 +39,17 @@ public final class GameState {
     static {
         // "?" = deduit par recoupement, pas encore certain
         Object[][] s = {{0x0a, "character list"}, {0x2b, "handshake"}, {0x43, "move"}, {0x45, "server time"},
-                {0x46, "spawn"}, {0x47, "remove"}, {0x49, "death"}, {0x4d, "attack"}, {0x57, "timers?"},
+                {0x46, "spawn"}, {0x47, "remove"}, {0x49, "death"}, {0x4d, "attack"}, {0x57, "buff/cooldown timer"},
                 {0x5a, "ack"}, {0x5b, "effect"}, {0x5c, "stat update?"}, {0x5e, "map info"},
                 {0x62, "character info"}, {0x64, "enter map"}, {0x66, "ack"}, {0x6c, "update"},
-                {0x7a, "server url"}, {0x86, "item obtained"}, {0x8c, "exp gained"}, {0x91, "map portals"},
+                {0x7a, "server url"}, {0x86, "item obtained"}, {0x87, "inventory slot"}, {0x8c, "exp gained"}, {0x91, "map portals"},
                 {0x95, "pet info"}, {0x9a, "map data"}, {0xa0, "chat"}, {0xa4, "status"}, {0xa6, "combat state?"},
                 {0xa9, "player info"}, {0xaa, "status"}, {0xac, "guild/friends list"}, {0xb3, "pet update"},
                 {0xbc, "system message"}, {0xca, "character state"}, {0xd6, "entities in view"},
                 {0xd7, "mob target?"}};
         for (Object[] o : s) SERVER_OPS.put((Integer) o[0], (String) o[1]);
         Object[][] c = {{0x27, "login"}, {0x43, "move"}, {0x4f, "attack/skill"}, {0x68, "ping"},
-                {0x69, "request"}, {0x7e, "client version"}, {0xa8, "UI action"}};
+                {0x69, "request"}, {0x7e, "client version"}, {0xa4, "use item"}, {0xa8, "UI action"}};
         for (Object[] o : c) CLIENT_OPS.put((Integer) o[0], (String) o[1]);
     }
 
@@ -339,6 +339,16 @@ public final class GameState {
                 case 0x27:
                     if (showSent) log(ENVOYE, "Login info sent to the server (device, game version)", null);
                     break;
+                case 0xa4: {
+                    // [a4][0d][ton ID][00][sac][case][numero de l'objet]... : tu utilises un objet
+                    if (m.length >= 12 && m[1] == 0x0d) {
+                        int bag = m[7] & 0xff, slot = m[8] & 0xff;
+                        long item = TwomDecoder.varint(m, 9, false)[0];
+                        if (showSent) log(ENVOYE, "You use item #" + item + " (bag " + bag + ", slot " + slot + ")",
+                                new Object[]{"item_used", "", "item #" + item, "", "", "", "bag " + bag + " slot " + slot});
+                    }
+                    break;
+                }
                 case 0x7e:
                     if (showSent && verbose) log(ENVOYE, "Client version sent", null);
                     break;
@@ -374,6 +384,23 @@ public final class GameState {
                         log(DROP, "You obtained item #" + item, new Object[]{"item_obtained", "", "item #" + item, "", "", "", ""});
                     }
                     break;
+                case 0x87: {
+                    // [87][sac][case] puis l'objet de la case (numero... quantite, 00), ou que des zeros
+                    if (m.length >= 4) {
+                        int bag = m[1] & 0xff, slot = m[2] & 0xff;
+                        boolean empty = true;
+                        for (int k = 3; k < m.length; k++) if (m[k] != 0) { empty = false; break; }
+                        if (empty) {
+                            log(RECU, "Inventory bag " + bag + ", slot " + slot + ": now empty", null);
+                        } else {
+                            long item = TwomDecoder.varint(m, 3, false)[0];
+                            int n = m.length;
+                            String qty = (m[n - 1] == 0 && (m[n - 2] & 0x80) == 0) ? " x" + m[n - 2] : "";
+                            log(RECU, "Inventory bag " + bag + ", slot " + slot + ": item #" + item + qty, null);
+                        }
+                    }
+                    break;
+                }
                 case 0x8c: {
                     // [8c][varint] : experience gagnee, arrive juste apres tes kills
                     long xp = TwomDecoder.varint(m, 1, false)[0];

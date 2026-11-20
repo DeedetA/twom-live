@@ -118,7 +118,7 @@ public final class TwomDecoder {
     // ------------------------------------------------------------ sens telephone -> serveur
     static final boolean[] C2S_OPS = new boolean[256];
     static {
-        for (int op : new int[]{0x27, 0x43, 0x4f, 0x68, 0x69, 0x7e, 0xa8}) C2S_OPS[op] = true;
+        for (int op : new int[]{0x27, 0x43, 0x4f, 0x68, 0x69, 0x7e, 0xa4, 0xa8}) C2S_OPS[op] = true;
     }
     static byte[] decR(byte[] p, int k, int r) {
         byte[] o = new byte[p.length];
@@ -149,6 +149,30 @@ public final class TwomDecoder {
         return best;
     }
 
+    static boolean isIdAt(byte[] m, int i) {
+        if (i + 4 > m.length) return false;
+        int b0 = m[i] & 0xff;
+        return b0 >= ID_MIN && b0 <= ID_MAX && (m[i + 1] & 0x80) != 0 && (m[i + 2] & 0x80) != 0 && (m[i + 3] & 0x80) == 0;
+    }
+
+    /**
+     * Forme attendue de chaque type envoye par le telephone. Une mauvaise cle peut donner par hasard
+     * un type connu (une utilisation d'objet lue comme 0x69, par ex.) : on verifie donc la forme.
+     */
+    static boolean validClient(byte[] x) {
+        if (x.length == 0 || !C2S_OPS[x[0] & 0xff]) return false;
+        switch (x[0] & 0xff) {
+            case 0x69: return x.length == 10 && x[1] == 1 && x[2] == 0 && x[3] == 0;
+            case 0x68: return x.length == 10 && x[1] == 0 && x[2] == 1;
+            case 0x7e: return x.length == 7;
+            case 0xa4: return x.length >= 12 && x[1] == 0x0d && isIdAt(x, 2) && x[6] == 0;
+            case 0xa8: return x.length >= 7 && x[1] == 0;
+            case 0x43: return x.length >= 18 && x.length <= 28;
+            case 0x4f: return x.length > 1000;
+            default: return true;
+        }
+    }
+
     /**
      * Message clair d'une trame envoyee par le telephone (sans l'octet de controle), ou null.
      * Meme chiffrement que dans l'autre sens, mais les petites trames trompent souvent la
@@ -164,8 +188,8 @@ public final class TwomDecoder {
             }
         }
         int k0 = guessKey(p);
-        byte[] x = dec(p, k0);
-        if (C2S_OPS[x[0] & 0xff]) return sub(x, 0, x.length - 1);
+        byte[] x = sub(dec(p, k0), 0, p.length - 1);
+        if (validClient(x)) return x;
         int[] cnt = new int[256];
         for (byte b : p) cnt[b & 0xff]++;
         Integer[] keys = new Integer[256];
@@ -175,9 +199,11 @@ public final class TwomDecoder {
             if (cnt[k] < 2) break;
             int base = (p[0] & 0xff) ^ k;
             int r0 = rotFor(k);
-            if (C2S_OPS[rotr(base, r0)]) { byte[] y = decR(p, k, r0); return sub(y, 0, y.length - 1); }
-            for (int r = 0; r < 8; r++) {
-                if (C2S_OPS[rotr(base, r)]) { byte[] y = decR(p, k, r); return sub(y, 0, y.length - 1); }
+            for (int t = -1; t < 8; t++) {
+                int r = t < 0 ? r0 : t;                  // d'abord le decalage habituel, puis les autres
+                if (!C2S_OPS[rotr(base, r)]) continue;
+                byte[] y = sub(decR(p, k, r), 0, p.length - 1);
+                if (validClient(y)) return y;
             }
         }
         return null;

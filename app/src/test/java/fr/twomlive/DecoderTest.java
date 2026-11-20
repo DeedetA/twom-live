@@ -350,6 +350,47 @@ public class DecoderTest {
         assertFalse(afterCrystal, afterCrystal.contains("dropped at"));
     }
 
+    static byte[] hexBytes(String h) {
+        String[] p = h.trim().split(" ");
+        byte[] o = new byte[p.length];
+        for (int i = 0; i < p.length; i++) o[i] = (byte) Integer.parseInt(p[i], 16);
+        return o;
+    }
+
+    @Test
+    public void utilisationDObjets() {
+        // trames reelles envoyees en utilisant des consommables (fichier Raw du 20/11)
+        String[][] frames = {
+            {"e9 ba 8d 8d dd 5e a0 a4 a6 af 4f 6c a0 a0 aa f8 ae fa b2 fc a0 fe 88 c0 a0 a2 a0 c2", "130022", "bag 2, slot 3"},
+            {"48 1b 2c 2c 7c ff 01 07 05 10 04 13 01 01 03 d1 fc 05 01 62", "131337", "bag 3, slot 2"},
+            {"71 22 15 15 45 c6 38 3e 32 37 c9 12 38 38 30 00 79 02 d9 04 98 06 c8 2c 38 65", "130069", "bag 3, slot 5"},
+            {"05 d1 1c 1c 08 e8 57 d6 55 94 ac ee 57 57 d5 41 56 c1 d0 40 57 c0 d0 4f 57 51 57 f4", "130035", "bag 3, slot 4"}};
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        for (String[] f : frames) {
+            byte[] m = TwomDecoder.decodeClientFrame(hexBytes(f[0]));
+            assertNotNull(f[0], m);
+            assertEquals(0xa4, m[0] & 0xff);
+            gs.clientMessage(m);
+        }
+        java.util.List<String> l = gs.lines();
+        for (int i = 0; i < frames.length; i++)
+            assertTrue(l.get(i), l.get(i).endsWith("You use item #" + frames[i][1] + " (" + frames[i][2] + ")"));
+        // la 3e utilisation avait ete lue comme "0x69" : quelle que soit la cle, on doit retrouver 0xa4
+        byte[] plain = hexBytes("a4 0d 96 96 be 7f 00 03 02 88 82 09 00 00 01 68 fe 01 00 5a");
+        for (int k = 0; k < 256; k++) {
+            byte[] back = TwomDecoder.decodeClientFrame(encrypt(plain, k));
+            if (back == null) continue;
+            assertEquals("cle " + k, 0xa4, back[0] & 0xff);
+        }
+        // reponses du serveur : case d'inventaire
+        gs.message(hexBytes("87 03 05 87 f8 15 00 00 04 1c a0 1d f0 1e 50 1f 78 09 00"));
+        gs.message(hexBytes("87 02 03 00 00 00 00 00 00"));
+        l = gs.lines();
+        assertTrue(l.toString(), l.get(4).endsWith("Inventory bag 3, slot 5: item #130069 x9"));
+        assertTrue(l.toString(), l.get(5).endsWith("Inventory bag 2, slot 3: now empty"));
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

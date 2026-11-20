@@ -26,6 +26,8 @@ connections as they are and reads the game server stream along the way.
 - **Drops** (red): gold and items that fall when a mob dies, with the mob they came from
   ("item #150198 dropped at (438,2763) (from Yeti)"), pick-ups, and "You obtained item #..."
   when an item reaches your inventory. The server sends item numbers, not names.
+- **Items used**: "You use item #130069 (bag 3, slot 5)" (blue), and the server's inventory
+  updates: "Inventory bag 3, slot 5: item #130069 x9" or "now empty".
 - **Chat**: show or hide chat messages.
 - **Sent**: show what your phone sends (attacks, skills).
 - **Details**: adds mob movements, hits, players in view and diagnostics.
@@ -59,7 +61,7 @@ Only TWOM goes through the local VPN; the rest of the phone is not affected.
   the real servers, plus a UDP relay (DNS).
 - `TwomDecoder`: decryption (XOR + rotation, per-frame key) and message parsing in both
   directions. Phone side: `0x43` movement, `0x4f` attack/skill (header + ~2 KB padding),
-  `0x68` ping, `0xa8` UI actions, `0x27` login info.
+  `0x68` ping, `0xa4` use item, `0xa8` UI actions, `0x27` login info.
 - `GameState`: entity tracking and log.
 
 The tests (`app/src/test`) replay real captures through the decoder and the relay.
