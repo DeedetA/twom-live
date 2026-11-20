@@ -118,7 +118,7 @@ public final class TwomDecoder {
     // ------------------------------------------------------------ sens telephone -> serveur
     static final boolean[] C2S_OPS = new boolean[256];
     static {
-        for (int op : new int[]{0x27, 0x43, 0x4f, 0x68, 0x69, 0x7e, 0xa4, 0xa8}) C2S_OPS[op] = true;
+        for (int op : new int[]{0x0f, 0x27, 0x43, 0x4f, 0x67, 0x68, 0x69, 0x7e, 0x91, 0xa4, 0xa8, 0xca}) C2S_OPS[op] = true;
     }
     static byte[] decR(byte[] p, int k, int r) {
         byte[] o = new byte[p.length];
@@ -166,6 +166,10 @@ public final class TwomDecoder {
             case 0x68: return x.length == 10 && x[1] == 0 && x[2] == 1;
             case 0x7e: return x.length == 7;
             case 0xa4: return x.length >= 12 && x[1] == 0x0d && isIdAt(x, 2) && x[6] == 0;
+            case 0x91: return x.length >= 8 && isIdAt(x, 2);
+            case 0x67: return x.length == 5 && isIdAt(x, 1);
+            case 0xca: return x.length == 6 && x[1] == 7 && isIdAt(x, 2);
+            case 0x0f: return x.length == 6 && x[1] == 1 && isIdAt(x, 2);
             case 0xa8: return x.length >= 7 && x[1] == 0;
             case 0x43: return x.length >= 18 && x.length <= 28;
             case 0x4f: return x.length > 1000;
@@ -178,7 +182,22 @@ public final class TwomDecoder {
      * Meme chiffrement que dans l'autre sens, mais les petites trames trompent souvent la
      * devinette de cle : on choisit alors la cle et le decalage qui donnent un type connu.
      */
-    public static byte[] decodeClientFrame(byte[] p) {
+    public static byte[] decodeClientFrame(byte[] p) { return decodeClientFrame(p, null); }
+
+    /** position de ton ID dans les types qui le contiennent, ou -1 */
+    static int selfPos(int op) {
+        switch (op) {
+            case 0x91: case 0xa4: case 0xca: case 0x0f: return 2;
+            case 0x67: return 1;
+            default: return -1;
+        }
+    }
+
+    /**
+     * selfId (hex, ex. "9698e56c") : ton identifiant actuel, s'il est connu. Il sert de dernier recours
+     * pour les tres petits messages : on n'accepte alors que la cle qui fait apparaitre ton ID a sa place.
+     */
+    public static byte[] decodeClientFrame(byte[] p, String selfId) {
         if (p.length <= 2) return null;
         if (periodic4(p)) {                          // attaque : en-tete + ~2 Ko de remplissage
             int k = attackKey(p);
@@ -204,6 +223,18 @@ public final class TwomDecoder {
                 if (!C2S_OPS[rotr(base, r)]) continue;
                 byte[] y = sub(decR(p, k, r), 0, p.length - 1);
                 if (validClient(y)) return y;
+            }
+        }
+        if (selfId != null) {
+            for (int k = 0; k < 256; k++) {
+                for (int t = -1; t < 8; t++) {
+                    int r = t < 0 ? rotFor(k) : t;
+                    int op = rotr((p[0] & 0xff) ^ k, r);
+                    int pos = selfPos(op);
+                    if (pos < 0 || !C2S_OPS[op]) continue;
+                    byte[] y = sub(decR(p, k, r), 0, p.length - 1);
+                    if (validClient(y) && hex(y, pos, 4).equals(selfId)) return y;
+                }
             }
         }
         return null;

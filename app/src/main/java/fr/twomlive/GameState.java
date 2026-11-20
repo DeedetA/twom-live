@@ -42,14 +42,15 @@ public final class GameState {
                 {0x46, "spawn"}, {0x47, "remove"}, {0x49, "death"}, {0x4d, "attack"}, {0x57, "buff/cooldown timer"},
                 {0x5a, "ack"}, {0x5b, "effect"}, {0x5c, "stat update?"}, {0x5e, "map info"},
                 {0x62, "character info"}, {0x64, "enter map"}, {0x66, "ack"}, {0x6c, "update"},
-                {0x7a, "server url"}, {0x86, "item obtained"}, {0x87, "inventory slot"}, {0x8c, "exp gained"}, {0x91, "map portals"},
+                {0x7a, "server url"}, {0x86, "item obtained"}, {0x87, "inventory slot"}, {0x8c, "gold change"}, {0x91, "NPC dialog"},
                 {0x95, "pet info"}, {0x9a, "map data"}, {0xa0, "chat"}, {0xa4, "status"}, {0xa6, "combat state?"},
                 {0xa9, "player info"}, {0xaa, "status"}, {0xac, "guild/friends list"}, {0xb3, "pet update"},
                 {0xbc, "system message"}, {0xca, "character state"}, {0xd6, "entities in view"},
-                {0xd7, "mob target?"}};
+                {0xd7, "nearby list?"}};
         for (Object[] o : s) SERVER_OPS.put((Integer) o[0], (String) o[1]);
         Object[][] c = {{0x27, "login"}, {0x43, "move"}, {0x4f, "attack/skill"}, {0x68, "ping"},
-                {0x69, "request"}, {0x7e, "client version"}, {0xa4, "use item"}, {0xa8, "UI action"}};
+                {0x69, "request"}, {0x7e, "client version"}, {0xa4, "use item"}, {0xa8, "UI action"},
+                {0x91, "NPC dialog"}, {0x67, "enter map"}, {0xca, "enter map"}, {0x0f, "enter map"}};
         for (Object[] o : c) CLIENT_OPS.put((Integer) o[0], (String) o[1]);
     }
 
@@ -230,6 +231,8 @@ public final class GameState {
 
     private String selfId = null;
 
+    public synchronized String selfIdHex() { return selfId; }
+
     private String nom(String id) {
         if (id.equals(selfId)) return "you";
         TwomDecoder.Entity e = ents.get(id);
@@ -339,6 +342,44 @@ public final class GameState {
                 case 0x27:
                     if (showSent) log(ENVOYE, "Login info sent to the server (device, game version)", null);
                     break;
+                case 0x91: {
+                    // [91][action][ton ID][PNJ]... : tu parles a un PNJ (achat, vente, teleportation...)
+                    if (!showSent || m.length < 8) break;
+                    int sub = m[1] & 0xff;
+                    long[] npc = TwomDecoder.varint(m, 6, false);
+                    int i = (int) npc[1];
+                    String who = "NPC #" + npc[0];
+                    switch (sub) {
+                        case 0x00: log(ENVOYE, "You talk to " + who, null); break;
+                        case 0x03: log(ENVOYE, "You close the dialog with " + who, null); break;
+                        case 0x02:
+                            if (i < m.length) log(ENVOYE, "You choose option " + TwomDecoder.varint(m, i, false)[0] + " (" + who + ")", null);
+                            break;
+                        case 0x0c: case 0x0e: {
+                            // [case globale = sac x 12 + case][objet]...[quantite][00]
+                            if (i + 2 >= m.length) break;
+                            int slot = m[i] & 0xff;
+                            long item = TwomDecoder.varint(m, i + 1, false)[0];
+                            int n = m.length;
+                            String qty = (m[n - 1] == 0 && (m[n - 2] & 0x80) == 0) ? " x" + m[n - 2] : "";
+                            String what = "item #" + item + qty + " (bag " + slot / 12 + ", slot " + slot % 12 + ")";
+                            if (sub == 0x0c) log(ENVOYE, "You ask " + who + " the price of " + what, null);
+                            else log(ENVOYE, "You sell " + what + " to " + who,
+                                    new Object[]{"item_sold", "", "item #" + item, "", "", "", who});
+                            break;
+                        }
+                        case 0x07: case 0x09: {
+                            long art = i < m.length ? TwomDecoder.varint(m, i, false)[0] : -1;
+                            if (sub == 0x07) log(ENVOYE, "You select article #" + art + " (" + who + ")", null);
+                            else log(ENVOYE, "You buy article #" + art + " from " + who,
+                                    new Object[]{"item_bought", "", "article #" + art, "", "", "", who});
+                            break;
+                        }
+                        default:
+                            log(ENVOYE, String.format(Locale.US, "NPC action 0x%02x (%s)", sub, who), null);
+                    }
+                    break;
+                }
                 case 0xa4: {
                     // [a4][0d][ton ID][00][sac][case][numero de l'objet]... : tu utilises un objet
                     if (m.length >= 12 && m[1] == 0x0d) {
@@ -402,9 +443,26 @@ public final class GameState {
                     break;
                 }
                 case 0x8c: {
-                    // [8c][varint] : experience gagnee, arrive juste apres tes kills
-                    long xp = TwomDecoder.varint(m, 1, false)[0];
-                    log(RECU, "+" + xp + " EXP", new Object[]{"exp", "", "", "", "", "", xp});
+                    // [8c][varint signe] : variation de ton or (or ramasse, vente, achat, teleportation payante)
+                    long g = TwomDecoder.varint(m, 1, true)[0];
+                    log(RECU, "Gold " + (g >= 0 ? "+" : "") + g, new Object[]{"gold", "", "", "", "", "", g});
+                    break;
+                }
+                case 0x91: {
+                    // [91][action][PNJ][ton ID]... : reponse d'un PNJ
+                    int sub = m.length > 1 ? m[1] & 0xff : -1;
+                    long[] npc = TwomDecoder.varint(m, 2, false);
+                    int i = (int) npc[1] + 4;
+                    if (sub == 0x0d && i < m.length) {
+                        log(RECU, "NPC #" + npc[0] + " offers " + TwomDecoder.varint(m, i, false)[0] + " gold", null);
+                    } else if (sub == 0x10) {
+                        log(RECU, "Sale to NPC #" + npc[0] + " completed", null);
+                    } else if (sub == 0x0b) {
+                        log(RECU, "Purchase from NPC #" + npc[0] + " completed", null);
+                    } else if (sub == 0x01 && verbose) {
+                        String[] c = TwomDecoder.parseChat(m);
+                        if (c != null) log(RECU, "NPC #" + npc[0] + " dialog: " + (c[0].isEmpty() ? c[1] : c[0]), null);
+                    }
                     break;
                 }
                 case 0x62:
@@ -671,7 +729,7 @@ public final class GameState {
         }
 
         private void client(byte[] frame) {
-            byte[] m = TwomDecoder.decodeClientFrame(frame);
+            byte[] m = TwomDecoder.decodeClientFrame(frame, gs.selfIdHex());
             gs.rawClient(m, frame);
             gs.clientMessage(m);
         }

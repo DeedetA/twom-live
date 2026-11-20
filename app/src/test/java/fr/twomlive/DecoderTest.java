@@ -319,7 +319,7 @@ public class DecoderTest {
         java.util.List<String> l = gs.lines();
         assertTrue(l.toString(), l.get(0).contains("You cast skill #3 on ?95f9e243"));
         assertTrue(l.toString(), l.get(1).contains("You cast skill #3 from") && !l.get(1).contains(" on "));
-        assertTrue(l.toString(), l.get(2).endsWith("+78 EXP"));
+        assertTrue(l.toString(), l.get(2).endsWith("Gold +78"));
     }
 
     @Test
@@ -389,6 +389,45 @@ public class DecoderTest {
         l = gs.lines();
         assertTrue(l.toString(), l.get(4).endsWith("Inventory bag 3, slot 5: item #130069 x9"));
         assertTrue(l.toString(), l.get(5).endsWith("Inventory bag 2, slot 3: now empty"));
+    }
+
+    @Test
+    public void venteAchatTeleportation() {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        // trames reelles du 20/11 : vente au PNJ #1170, achat au PNJ #1158, teleporteur #1178
+        String[] frames = {
+            "3a 5e fb 78 27 45 3c da f3",
+            "df 6c 3f fe 51 60 dc af cf dc 5f cb ed ed ed cd ed 68",
+            "84 fa 98 a0 55 73 e4 8a 86 e4 94 06 c2 c2 c2 c6 c2 7a",
+            "bf 2b 87 f7 1c 50 7f a3 fe",
+            "14 4e 08 30 c5 e3 74 4a 02 49",
+            "37 7b b4 b3 0d c9 3b fc f5 9b",
+            "8f 46 0c 0b b5 71 83 4a c5 24"};
+        gs.message(hexBytes("62 00 00 96 98 e5 6c"));         // ton ID dans cette session
+        for (String f : frames) {
+            byte[] m = TwomDecoder.decodeClientFrame(hexBytes(f), gs.selfIdHex());
+            assertNotNull(f, m);
+            assertEquals(f, 0x91, m[0] & 0xff);
+            gs.clientMessage(m);
+        }
+        gs.message(hexBytes("91 0d 89 12 96 98 e5 6c 83 74 00 00 00 00 00 00"));
+        gs.message(hexBytes("8c 83 74"));
+        gs.message(hexBytes("8c c0 6e"));
+        gs.message(hexBytes("8c c3 6f"));
+        java.util.List<String> l = gs.lines();
+        String all = String.join("\n", l);
+        assertTrue(all, l.get(0).endsWith("You talk to NPC #1170"));
+        assertTrue(all, l.get(1).endsWith("You ask NPC #1170 the price of item #150193 x1 (bag 1, slot 5)"));
+        assertTrue(all, l.get(2).endsWith("You sell item #150193 x1 (bag 1, slot 5) to NPC #1170"));
+        assertTrue(all, l.get(3).endsWith("You close the dialog with NPC #1170"));
+        assertTrue(all, l.get(4).endsWith("You select article #20 (NPC #1158)"));
+        assertTrue(all, l.get(5).endsWith("You buy article #20 from NPC #1158"));
+        assertTrue(all, l.get(6).endsWith("You choose option 5 (NPC #1178)"));
+        assertTrue(all, l.get(7).endsWith("NPC #1170 offers 500 gold"));
+        assertTrue(all, l.get(8).endsWith("Gold +500"));
+        assertTrue(all, l.get(9).endsWith("Gold -110"));
+        assertTrue(all, l.get(10).endsWith("Gold -495"));
     }
 
     // ---------------------------------------------------------------- relais

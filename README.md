@@ -28,6 +28,9 @@ connections as they are and reads the game server stream along the way.
   when an item reaches your inventory. The server sends item numbers, not names.
 - **Items used**: "You use item #130069 (bag 3, slot 5)" (blue), and the server's inventory
   updates: "Inventory bag 3, slot 5: item #130069 x9" or "now empty".
+- **NPCs and gold**: "You talk to NPC #1170", "You sell item #150193 x1 (bag 1, slot 5) to
+  NPC #1170", "NPC #1170 offers 500 gold", "You buy article #20 from NPC #1158",
+  "You choose option 404 (NPC #1178)", and every change of your gold ("Gold +500", "Gold -495").
 - **Chat**: show or hide chat messages.
 - **Sent**: show what your phone sends (attacks, skills).
 - **Details**: adds mob movements, hits, players in view and diagnostics.
@@ -61,7 +64,8 @@ Only TWOM goes through the local VPN; the rest of the phone is not affected.
   the real servers, plus a UDP relay (DNS).
 - `TwomDecoder`: decryption (XOR + rotation, per-frame key) and message parsing in both
   directions. Phone side: `0x43` movement, `0x4f` attack/skill (header + ~2 KB padding),
-  `0x68` ping, `0xa4` use item, `0xa8` UI actions, `0x27` login info.
+  `0x68` ping, `0xa4` use item, `0x91` NPC dialog, `0xa8` UI actions, `0x27` login info.
+  Server side: `0x8c` gold change, `0x91` NPC replies, `0x87` inventory slot, `0x86` item obtained.
 - `GameState`: entity tracking and log.
 
 The tests (`app/src/test`) replay real captures through the decoder and the relay.
