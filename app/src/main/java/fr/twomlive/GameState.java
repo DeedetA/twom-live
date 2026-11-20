@@ -42,7 +42,7 @@ public final class GameState {
                 {0x46, "spawn"}, {0x47, "remove"}, {0x49, "death"}, {0x4d, "attack"}, {0x57, "timers?"},
                 {0x5a, "ack"}, {0x5b, "effect"}, {0x5c, "stat update?"}, {0x5e, "map info"},
                 {0x62, "character info"}, {0x64, "enter map"}, {0x66, "ack"}, {0x6c, "update"},
-                {0x7a, "server url"}, {0x86, "kill update?"}, {0x8c, "exp gained"}, {0x91, "map portals"},
+                {0x7a, "server url"}, {0x86, "item obtained"}, {0x8c, "exp gained"}, {0x91, "map portals"},
                 {0x95, "pet info"}, {0x9a, "map data"}, {0xa0, "chat"}, {0xa4, "status"}, {0xa6, "combat state?"},
                 {0xa9, "player info"}, {0xaa, "status"}, {0xac, "guild/friends list"}, {0xb3, "pet update"},
                 {0xbc, "system message"}, {0xca, "character state"}, {0xd6, "entities in view"},
@@ -216,7 +216,8 @@ public final class GameState {
     public synchronized Map<String, TwomDecoder.Entity> knownIds() { return new HashMap<>(ents); }
 
     public synchronized void reset() {
-        ents.clear(); mobs.clear(); hits.clear(); lines.clear(); alerted.clear(); inView.clear(); hasSelf = false; deaths = 0; attacksSent = 0; selfId = null;
+        ents.clear(); mobs.clear(); hits.clear(); lines.clear(); alerted.clear(); inView.clear(); hasSelf = false;
+        recentDeaths.clear(); deaths = 0; attacksSent = 0; selfId = null;
         csv.setLength(0);
         csv.append("time;event;id;name;level;x;y;detail\n");
         for (Listener l : listeners) l.onMobsChanged();
@@ -366,6 +367,13 @@ public final class GameState {
                 case 0x4d: attaque(m); break;
                 case 0x49: mort(m); break;
                 case 0x47: retrait(m); break;
+                case 0x86:
+                    // [86][01][modele de l'objet]... : un objet arrive dans ton inventaire
+                    if (m.length >= 5 && m[1] == 1) {
+                        long item = TwomDecoder.varint(m, 2, false)[0];
+                        log(DROP, "You obtained item #" + item, new Object[]{"item_obtained", "", "item #" + item, "", "", "", ""});
+                    }
+                    break;
                 case 0x8c: {
                     // [8c][varint] : experience gagnee, arrive juste apres tes kills
                     long xp = TwomDecoder.varint(m, 1, false)[0];
@@ -394,9 +402,64 @@ public final class GameState {
         }
     }
 
+    // ------------------------------------------------------------ drops
+    /** morts recentes, pour savoir de quel mob vient un drop */
+    private static final class Death {
+        final String name; final long x, y, t;
+        Death(String name, long x, long y, long t) { this.name = name; this.x = x; this.y = y; this.t = t; }
+    }
+
+    private final java.util.ArrayDeque<Death> recentDeaths = new java.util.ArrayDeque<>();
+
+    /**
+     * " (from Yeti)" si un mob est mort juste avant pres de cet endroit ; sinon "".
+     * Le serveur envoie les drops juste apres la mort : on prend la mort la plus recente
+     * (et non la plus proche, deux mobs pouvant mourir presque au meme endroit).
+     */
+    private synchronized String dropSource(long x, long y) {
+        long now = System.currentTimeMillis();
+        java.util.Iterator<Death> it = recentDeaths.descendingIterator();
+        while (it.hasNext()) {
+            Death d = it.next();
+            if (now - d.t > 4000) break;
+            if (Math.hypot(d.x - x, d.y - y) <= 80) return " (from " + d.name + ")";
+        }
+        return "";
+    }
+
+    /**
+     * Un objet tombe au sol : apparition (0x46) sans nom, avec un numero de modele sur 3 octets.
+     * [46][id][x][y][4 champs][modele] ; le nom de l'objet n'est pas envoye (le jeu le connait).
+     */
+    private void itemDrop(byte[] m) {
+        String id = TwomDecoder.hex(m, 1, 4);
+        int i = 5;
+        long[] xv = TwomDecoder.varint(m, i, true); i = (int) xv[1];
+        long[] yv = TwomDecoder.varint(m, i, true); i = (int) yv[1];
+        for (int k = 0; k < 4; k++) i = (int) TwomDecoder.varint(m, i, true)[1];
+        int start = i;
+        long[] tv = TwomDecoder.varint(m, i, false);
+        if (tv[1] - start != 3) return;                  // pas un objet (mob, familier, effet...)
+        TwomDecoder.Entity e = new TwomDecoder.Entity();
+        e.id = id;
+        e.x = (int) xv[0];
+        e.y = (int) yv[0];
+        e.name = "item #" + tv[0];
+        synchronized (this) { ents.put(id, e); }
+        log(DROP, e.name + " dropped at (" + e.x + "," + e.y + ")" + dropSource(e.x, e.y),
+                new Object[]{"item_dropped", id, e.name, "", e.x, e.y, dropSource(e.x, e.y).replace(" (from ", "").replace(")", "")});
+    }
+
     private void apparition(byte[] m, int op) {
         boolean changed = false;
-        for (TwomDecoder.Entity e : TwomDecoder.parseEntities(m, op == 0xd6 ? 2 : 1)) {
+        List<TwomDecoder.Entity> parsed = TwomDecoder.parseEntities(m, op == 0xd6 ? 2 : 1);
+        if (op == 0x46 && m.length > 14) {
+            String sid = TwomDecoder.hex(m, 1, 4);
+            boolean named = false;
+            for (TwomDecoder.Entity e : parsed) if (e.id.equals(sid)) named = true;
+            if (!named) itemDrop(m);
+        }
+        for (TwomDecoder.Entity e : parsed) {
             boolean isNew;
             synchronized (this) {
                 ents.put(e.id, e);
@@ -412,7 +475,9 @@ public final class GameState {
                             new Object[]{spawn ? "spawn" : "in_view", e.id, e.name, e.lvl, e.x, e.y, ""});
                 }
             } else if (e.name.endsWith("Gold")) {
-                log(DROP, e.name + " dropped at (" + e.x + "," + e.y + ")", new Object[]{"gold_dropped", e.id, e.name, "", e.x, e.y, ""});
+                String src = dropSource(e.x, e.y);
+                log(DROP, e.name + " dropped at (" + e.x + "," + e.y + ")" + src,
+                        new Object[]{"gold_dropped", e.id, e.name, "", e.x, e.y, src.replace(" (from ", "").replace(")", "")});
             } else if (verbose) {
                 log(RECU, e.name + " in view at (" + e.x + "," + e.y + ")", null);
             }
@@ -483,6 +548,10 @@ public final class GameState {
             inView.remove(vic);
         }
         String detail = "killed by " + killer + (nb > 0 ? " (" + nb + (nb == 1 ? " hit)" : " hits)") : "");
+        synchronized (this) {
+            recentDeaths.addLast(new Death(name, xv[0], yv[0], System.currentTimeMillis()));
+            while (recentDeaths.size() > 30) recentDeaths.pollFirst();
+        }
         log(RECU, name + " died at (" + xv[0] + "," + yv[0] + ") - " + detail,
                 new Object[]{"death", vic, name, lvl, xv[0], yv[0], detail});
         mobsChanged();
@@ -504,6 +573,8 @@ public final class GameState {
             mobsChanged();
         } else if (e != null && e.name.endsWith("Gold")) {
             log(DROP, e.name + " picked up", new Object[]{"gold_picked_up", id, e.name, "", e.x, e.y, ""});
+        } else if (e != null && e.name.startsWith("item #")) {
+            log(DROP, e.name + " picked up", new Object[]{"item_picked_up", id, e.name, "", e.x, e.y, ""});
         }
     }
 

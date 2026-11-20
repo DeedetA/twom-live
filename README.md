@@ -23,6 +23,9 @@ connections as they are and reads the game server stream along the way.
    a connection opened before the capture cannot be read.
 3. Come back to TWOM Live to see the mobs in view and the log.
 
+- **Drops** (red): gold and items that fall when a mob dies, with the mob they came from
+  ("item #150198 dropped at (438,2763) (from Yeti)"), pick-ups, and "You obtained item #..."
+  when an item reaches your inventory. The server sends item numbers, not names.
 - **Chat**: show or hide chat messages.
 - **Sent**: show what your phone sends (attacks, skills).
 - **Details**: adds mob movements, hits, players in view and diagnostics.

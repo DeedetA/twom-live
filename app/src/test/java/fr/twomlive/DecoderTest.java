@@ -322,6 +322,34 @@ public class DecoderTest {
         assertTrue(l.toString(), l.get(2).endsWith("+78 EXP"));
     }
 
+    @Test
+    public void dropsDesMobs() throws Exception {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        String raw = new String(resource("/raw_drops.txt"), java.nio.charset.StandardCharsets.UTF_8);
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(" <- \\S\\S .*?\\(\\d+ B\\)  ([0-9a-f ]+)$");
+        for (String line : raw.split("\n")) {
+            java.util.regex.Matcher mm = p.matcher(line);
+            if (!mm.find()) continue;
+            String[] hx = mm.group(1).trim().split(" ");
+            byte[] m = new byte[hx.length];
+            for (int i = 0; i < hx.length; i++) m[i] = (byte) Integer.parseInt(hx[i], 16);
+            gs.message(m);
+        }
+        String all = String.join("\n", gs.lines());
+        assertTrue(all, all.contains("Wing Elemental died at (433,2766) - killed by you"));
+        assertTrue(all, all.contains("item #150199 dropped at (433,2740) (from Wing Elemental)"));
+        assertTrue(all, all.contains("59Gold dropped at (417,2756) (from Wing Elemental)"));
+        assertTrue(all, all.contains("You obtained item #150199"));
+        assertTrue(all, all.contains("item #150199 picked up"));
+        assertEquals(all, 2, all.split("item #150198 dropped at .{0,20}\\(from Yeti\\)", -1).length - 1);
+        assertEquals(all, 2, all.split("You obtained item #150198", -1).length - 1);
+        assertTrue(all, all.contains("49Gold dropped at") && all.contains("47Gold dropped at"));
+        // le Crystal ne laisse rien
+        String afterCrystal = all.substring(all.indexOf("Crystal died at"));
+        assertFalse(afterCrystal, afterCrystal.contains("dropped at"));
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();
