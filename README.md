@@ -26,6 +26,10 @@ connections as they are and reads the game server stream along the way.
 - **Chat**: show or hide chat messages.
 - **Sent**: show what your phone sends (attacks, skills).
 - **Details**: adds mob movements, hits, players in view and diagnostics.
+- **Raw**: logs every message in both directions (`<-` received, `->` sent) with its type,
+  size and decrypted content in hex, and records it to a file. **Raw file** shares that file.
+  Two things are never shown or recorded: the content of the login message (it may hold your
+  session token) and the ~2 KB anti-cheat block attached to each attack (only its size).
 - **Log colors**: green = received from the server, blue = sent by your phone,
   red = drops (gold dropped and picked up), grey = app messages.
 - **Share**: sends the full log plus the events as CSV.

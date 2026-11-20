@@ -246,6 +246,58 @@ public class DecoderTest {
         gs.reset();
     }
 
+    @Test
+    public void modeRawToutCeQuiPasse() throws Exception {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        java.util.List<String> file = new java.util.ArrayList<>();
+        gs.rawSink = file::add;
+        gs.raw = true;
+        try {
+            GameState.Stream s = new GameState.Stream(gs, "test");
+            byte[] d = capture();
+            s.feed(d, 0, d.length);
+            byte[] cli = resource("/capture2_c2s.bin");
+            s.feedClient(cli, 0, cli.length);
+            long in = file.stream().filter(l -> l.contains(" <- ")).count();
+            long out = file.stream().filter(l -> l.contains(" -> ")).count();
+            assertTrue("recus " + in, in > 1000);
+            assertTrue("envoyes " + out, out > 500);
+            assertTrue(file.stream().anyMatch(l -> l.contains("<- 49 death (")));
+            assertTrue(file.stream().anyMatch(l -> l.contains("<- d6 entities in view (")));
+            assertTrue(file.stream().anyMatch(l -> l.contains("-> 43 move (")));
+            // attaques : en-tete seulement, le bloc anti-triche n'est jamais recopie
+            java.util.List<String> atk = new java.util.ArrayList<>();
+            for (String l : file) if (l.contains("-> 4f attack/skill (")) atk.add(l);
+            assertEquals(103, atk.size());
+            for (String l : atk) {
+                assertTrue(l, l.contains("anti-cheat block omitted"));
+                assertTrue(l, l.length() < 200);
+            }
+        } finally {
+            gs.raw = false;
+            gs.rawSink = null;
+        }
+    }
+
+    @Test
+    public void connexionMasqueeEnModeRaw() {
+        GameState gs = GameState.INSTANCE;
+        java.util.List<String> file = new java.util.ArrayList<>();
+        gs.rawSink = file::add;
+        gs.raw = true;
+        try {
+            byte[] login = "\u0027Android/secret-token-123".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+            gs.rawClient(login, login);
+            assertEquals(1, file.size());
+            assertTrue(file.get(0), file.get(0).contains("-> 27 login") && file.get(0).contains("content hidden"));
+            assertFalse(file.get(0), file.get(0).contains(GameState.spacedHex(login, 1, 4)));
+        } finally {
+            gs.raw = false;
+            gs.rawSink = null;
+        }
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

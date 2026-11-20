@@ -24,6 +24,82 @@ public final class GameState {
     public volatile boolean showChat = true;
     public volatile boolean verbose = false;
     public volatile boolean showSent = true;
+
+    // ------------------------------------------------------------ mode "Raw" : tous les messages
+    /** recoit chaque ligne brute (fichier d'enregistrement cote Android) */
+    public interface RawSink { void write(String line); }
+
+    public volatile boolean raw = false;
+    public volatile RawSink rawSink = null;
+    private final SimpleDateFormat rawFmt = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
+    private static final int SCREEN_HEX = 32;           // octets montres a l'ecran (le fichier a tout)
+
+    static final Map<Integer, String> SERVER_OPS = new HashMap<>();
+    static final Map<Integer, String> CLIENT_OPS = new HashMap<>();
+    static {
+        Object[][] s = {{0x0a, "character list"}, {0x2b, "handshake"}, {0x43, "move"}, {0x46, "spawn"},
+                {0x47, "remove"}, {0x49, "death"}, {0x4d, "attack"}, {0x5b, "effect"}, {0x5e, "map info"},
+                {0x62, "character info"}, {0x6c, "update"}, {0x7a, "server url"}, {0xa0, "chat"},
+                {0xa4, "status"}, {0xa9, "player info"}, {0xaa, "status"}, {0xbc, "system message"},
+                {0xd6, "entities in view"}};
+        for (Object[] o : s) SERVER_OPS.put((Integer) o[0], (String) o[1]);
+        Object[][] c = {{0x27, "login"}, {0x43, "move"}, {0x4f, "attack/skill"}, {0x68, "ping"},
+                {0x69, "request"}, {0x7e, "client version"}, {0xa8, "UI action"}};
+        for (Object[] o : c) CLIENT_OPS.put((Integer) o[0], (String) o[1]);
+    }
+
+    static String spacedHex(byte[] m, int off, int len) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = off; i < off + len && i < m.length; i++) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(String.format("%02x", m[i] & 0xff));
+        }
+        return sb.toString();
+    }
+
+    private void rawLine(boolean fromServer, String head, byte[] m, int shown, String tail) {
+        if (!raw) return;
+        String dir = fromServer ? "<-" : "->";
+        int n = m == null ? 0 : Math.min(shown, m.length);
+        String full = m == null ? "" : spacedHex(m, 0, n) + (tail != null ? " " + tail : "");
+        RawSink sink = rawSink;
+        if (sink != null) {
+            String t;
+            synchronized (rawFmt) { t = rawFmt.format(new Date()); }
+            try { sink.write(t + " " + dir + " " + head + "  " + full); } catch (RuntimeException ignored) { }
+        }
+        String screen = m == null ? "" : spacedHex(m, 0, Math.min(n, SCREEN_HEX)) + (n > SCREEN_HEX ? " ..." : (tail != null ? " " + tail : ""));
+        log(fromServer ? RECU : ENVOYE, dir + " " + head + "  " + screen, null);
+    }
+
+    /** message recu du serveur, tel quel */
+    public void rawServer(byte[] m) {
+        if (!raw || m == null || m.length == 0) return;
+        int op = m[0] & 0xff;
+        String name = SERVER_OPS.get(op);
+        rawLine(true, String.format(Locale.US, "%02x %s (%d B)", op, name != null ? name : "?", m.length), m, m.length, null);
+    }
+
+    /** message envoye par le telephone ; frame = trame chiffree si le dechiffrement a echoue */
+    public void rawClient(byte[] m, byte[] frame) {
+        if (!raw) return;
+        if (m == null) {
+            rawLine(false, String.format(Locale.US, "?? undecoded (%d B, encrypted)", frame.length), frame, frame.length, null);
+            return;
+        }
+        if (m.length == 0) return;
+        int op = m[0] & 0xff;
+        String name = CLIENT_OPS.get(op);
+        String head = String.format(Locale.US, "%02x %s (%d B)", op, name != null ? name : "?", m.length);
+        if (op == 0x27) {
+            // peut contenir le jeton de session : jamais affiche ni enregistre
+            rawLine(false, head, new byte[]{m[0]}, 1, "[content hidden: may contain your session token]");
+        } else if (op == 0x4f && m.length > 200) {
+            rawLine(false, head, m, 20, "... [+" + (m.length - 20) + " B anti-cheat block omitted]");
+        } else {
+            rawLine(false, head, m, m.length, null);
+        }
+    }
     public int attacksSent = 0;
 
     private final Map<String, TwomDecoder.Entity> ents = new HashMap<>();
@@ -447,7 +523,7 @@ public final class GameState {
             if (state < 0) return;
             for (byte[] frame : clientReader.feed(data, off, len)) {
                 if (frame.length <= 2) continue;            // battement de coeur
-                if (state == 1) gs.clientMessage(TwomDecoder.decodeClientFrame(frame));
+                if (state == 1) client(frame);
                 else if (pendingClient.size() < 200) pendingClient.add(frame);
             }
         }
@@ -474,14 +550,23 @@ public final class GameState {
                     gs.connection(true, dest);
                     for (byte[] p : pending) process(p);
                     pending.clear();
-                    for (byte[] p : pendingClient) gs.clientMessage(TwomDecoder.decodeClientFrame(p));
+                    for (byte[] p : pendingClient) client(p);
                     pendingClient.clear();
                 }
             }
         }
 
+        private void client(byte[] frame) {
+            byte[] m = TwomDecoder.decodeClientFrame(frame);
+            gs.rawClient(m, frame);
+            gs.clientMessage(m);
+        }
+
         private void process(byte[] frame) {
-            for (byte[] msg : TwomDecoder.decodeFrame(frame, gs.knownIds())) gs.message(msg);
+            for (byte[] msg : TwomDecoder.decodeFrame(frame, gs.knownIds())) {
+                gs.rawServer(msg);
+                gs.message(msg);
+            }
         }
 
         public synchronized void closed() {

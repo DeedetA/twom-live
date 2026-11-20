@@ -60,6 +60,7 @@ public class MainActivity extends Activity implements GameState.Listener {
         SharedPreferences prefs = getSharedPreferences(Alerter.PREFS, MODE_PRIVATE);
         Alerter alerter = Alerter.get(this);
         alerter.attach();
+        gs.rawSink = RawRecorder.get(this);          // tout ce qui passe, en mode Raw
 
         TextView credit = new TextView(this);
         credit.setText("Made with love by @Deedet, pm me if issue found.\nPlease don't use it for botting or for macros ❤️");
@@ -101,7 +102,18 @@ public class MainActivity extends Activity implements GameState.Listener {
         details.setChecked(gs.verbose);
         details.setOnCheckedChangeListener((c, on) -> gs.verbose = on);
         opts.addView(details);
-        root.addView(opts);
+        CheckBox rawBox = new CheckBox(this);
+        rawBox.setText("Raw");
+        rawBox.setChecked(prefs.getBoolean("raw", false));
+        gs.raw = rawBox.isChecked();
+        rawBox.setOnCheckedChangeListener((c, on) -> {
+            prefs.edit().putBoolean("raw", on).apply();
+            gs.raw = on;
+        });
+        opts.addView(rawBox);
+        android.widget.HorizontalScrollView optsScroll = new android.widget.HorizontalScrollView(this);
+        optsScroll.addView(opts);
+        root.addView(optsScroll);
 
         // ------------------------------------------------ alerte d'apparition
         TextView at = new TextView(this);
@@ -187,7 +199,25 @@ public class MainActivity extends Activity implements GameState.Listener {
         row2.addView(share);
         Button clear = new Button(this);
         clear.setText("Clear");
-        clear.setOnClickListener(v -> { gs.reset(); shown.clear(); log.setText(""); });
+        clear.setOnClickListener(v -> { gs.reset(); shown.clear(); log.setText(""); RawRecorder.get(this).clear(); });
+        Button exportRaw = new Button(this);
+        exportRaw.setText("Raw file");
+        exportRaw.setOnClickListener(v -> {
+            RawRecorder rec = RawRecorder.get(this);
+            rec.flush();
+            if (rec.file().length() == 0) {
+                Toast.makeText(this, "Nothing recorded yet: tick Raw, then play", Toast.LENGTH_LONG).show();
+                return;
+            }
+            Intent s = new Intent(Intent.ACTION_SEND);
+            s.setType("text/plain");
+            s.putExtra(Intent.EXTRA_STREAM, RawFileProvider.RAW_URI);
+            s.putExtra(Intent.EXTRA_SUBJECT, "TWOM Live - raw messages");
+            s.setClipData(android.content.ClipData.newRawUri("raw", RawFileProvider.RAW_URI));
+            s.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(s, "Share the raw file"));
+        });
+        row2.addView(exportRaw);
         row2.addView(clear);
         root.addView(row2);
 
