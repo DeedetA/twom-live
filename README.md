@@ -43,6 +43,9 @@ connections as they are and reads the game server stream along the way.
   every hit anyone lands on it. Shown in the mobs panel ("Yeti Highguard (2336,2079) HP 1541/1650"),
   with Details in the log, and as max HP in Mob alerts (handy when a boss shares a normal mob's
   sprite). Mob regeneration is not sent, so HP is re-synced each time the server resends the mob.
+- **Buffs, teleports, equipment**: "Buff #32 started (20 min)", "Buff #132 started (1 min) x3"
+  (stacks after kills), "Move speed: 130", "Teleporting to Wingfield Beach (map #5)",
+  "You equip item #30010" / "You unequip item #40029".
 - **Moves** (checkbox): every movement around you — who moves, from where to where, how far and how
   fast, facing which way ("Roopa #9694a34d (1007,1546) -> (1007,1525), moved 21 in 0.64 s, facing
   north, stopped").

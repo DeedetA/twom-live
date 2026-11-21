@@ -41,14 +41,15 @@ public final class GameState {
     static {
         // "?" = deduit par recoupement, pas encore certain
         Object[][] s = {{0x0a, "character list"}, {0x2b, "handshake"}, {0x43, "move"}, {0x45, "server time"},
-                {0x46, "spawn"}, {0x47, "remove"}, {0x49, "death"}, {0x4d, "attack"}, {0x57, "buff/cooldown timer"},
-                {0x5a, "ack"}, {0x5b, "effect"}, {0x5c, "stat update"}, {0x5e, "map info"},
+                {0x46, "spawn"}, {0x47, "remove"}, {0x49, "death"}, {0x4d, "attack"}, {0x57, "buff started"},
+                {0x5a, "ack"}, {0x5b, "entity speed"}, {0x5c, "stat update"}, {0x5e, "map area"},
                 {0x62, "character info"}, {0x64, "enter map"}, {0x66, "ack"}, {0x6c, "update"},
                 {0x7a, "server url"}, {0x86, "item obtained"}, {0x87, "inventory slot"}, {0x8c, "gold change"}, {0x91, "NPC dialog"},
-                {0x95, "pet info"}, {0x9a, "map data"}, {0xa0, "chat"}, {0xa4, "status"}, {0xa6, "skill crystals gained"},
-                {0xa9, "player info"}, {0xaa, "status"}, {0xac, "guild/friends list"}, {0xb3, "pet update"},
+                {0x95, "pet info"}, {0x9a, "map data"}, {0xa0, "chat"}, {0xa4, "equipment change"}, {0xa6, "skill crystals gained"},
+                {0xa9, "player info"}, {0xaa, "spawn status"}, {0xac, "guild/friends list"}, {0xb3, "pet update"},
                 {0xbc, "system message"}, {0xca, "character state"}, {0xd6, "entities in view"},
-                {0xd7, "nearby list?"}};
+                {0xd7, "nearby list?"}, {0x8e, "teleport to map"}, {0x58, "buff fading"},
+                {0x59, "buff ended"}, {0x18, "keep-alive"}};
         for (Object[] o : s) SERVER_OPS.put((Integer) o[0], (String) o[1]);
         Object[][] c = {{0x27, "login"}, {0x43, "move"}, {0x4f, "attack/skill"}, {0x68, "ping"},
                 {0x69, "request"}, {0x7e, "client version"}, {0xa4, "use item"}, {0xa8, "UI action"},
@@ -347,6 +348,26 @@ public final class GameState {
         return halves % 2 == 0 ? String.valueOf(halves / 2) : (halves / 2) + ".5";
     }
 
+    // numeros de maps vus dans les captures (message 0x8e et 0x5e)
+    static final Map<Integer, String> MAPS = new HashMap<>();
+    static {
+        MAPS.put(5, "Wingfield Beach");
+        MAPS.put(25, "Forest of Grave");
+    }
+
+    static String mapName(int n) {
+        String s = MAPS.get(n);
+        return s != null ? s + " (map #" + n + ")" : "map #" + n;
+    }
+
+    /** 1200000 -> "20 min", 6000 -> "6 s" */
+    static String duration(long ms) {
+        if (ms >= 3_600_000 && ms % 60_000 == 0) return (ms / 3_600_000) + " h" + (ms % 3_600_000 != 0 ? " " + (ms % 3_600_000) / 60_000 + " min" : "");
+        if (ms >= 60_000 && ms % 1000 == 0) return (ms / 60_000) + " min" + (ms % 60_000 != 0 ? " " + (ms % 60_000) / 1000 + " s" : "");
+        if (ms % 1000 == 0) return (ms / 1000) + " s";
+        return String.format(Locale.US, "%.1f s", ms / 1000.0);
+    }
+
     /** 3 -> "0.5", 6 -> "1", 1 -> "1/6" */
     static String sixths(long n) {
         if (n % 6 == 0) return String.valueOf(n / 6);
@@ -539,7 +560,12 @@ public final class GameState {
                 }
                 case 0xa4: {
                     // [a4][0d][ton ID][00][sac][case][numero de l'objet]... : tu utilises un objet
-                    if (m.length >= 12 && m[1] == 0x0d) {
+                    if (m.length >= 12 && (m[1] == 0x01 || m[1] == 0x03)) {
+                        // [a4][01 equiper / 03 retirer][ton ID][00][sac][case][sac][case][objet][caracteristiques]...
+                        long item = TwomDecoder.varint(m, 10, false)[0];
+                        if (showSent) log(ENVOYE, (m[1] == 0x01 ? "You equip item #" : "You unequip item #") + item,
+                                new Object[]{m[1] == 0x01 ? "item_equipped" : "item_unequipped", "", "item #" + item, "", "", "", ""});
+                    } else if (m.length >= 12 && m[1] == 0x0d) {
                         int bag = m[7] & 0xff, slot = m[8] & 0xff;
                         long item = TwomDecoder.varint(m, 9, false)[0];
                         if (showSent) log(ENVOYE, "You use item #" + item + " (bag " + bag + ", slot " + slot + ")",
@@ -622,6 +648,33 @@ public final class GameState {
                     }
                     break;
                 }
+                case 0x8e: {
+                    // [8e][numero de map] : le serveur t'envoie sur une autre map
+                    if (m.length != 2) break;
+                    int map = m[1] & 0xff;
+                    log(SYSTEME, "Teleporting to " + mapName(map), new Object[]{"teleport", "", mapName(map), "", "", "", map});
+                    break;
+                }
+                case 0x57: {
+                    // [57][buff][icone][duree en ms sur 8 octets][8 octets][cumul][?] : un buff commence sur toi
+                    long[] b = TwomDecoder.varint(m, 1, false);
+                    long[] icon = TwomDecoder.varint(m, (int) b[1], false);
+                    int i = (int) icon[1];
+                    if (i + 18 > m.length) break;
+                    long ms = 0;
+                    for (int j = 0; j < 8; j++) ms = (ms << 8) | (m[i + j] & 0xff);
+                    // avant-dernier octet : le cumul pour les buffs qui s'empilent (1 a 5 apres chaque kill),
+                    // une autre valeur pour les autres (20 pour un consommable, 55 ou 60 pour des competences)
+                    int stack = m[i + 16] & 0xff;
+                    if (stack > 10) stack = 0;
+                    log(RECU, "Buff #" + b[0] + " started (" + duration(ms) + ")" + (stack > 1 ? " x" + stack : ""),
+                            new Object[]{"buff", "", "buff #" + b[0], "", "", "", ms});
+                    break;
+                }
+                case 0x59:
+                    // [59][buff] : il se termine
+                    if (verbose && m.length >= 2) log(RECU, "Buff #" + TwomDecoder.varint(m, 1, false)[0] + " ended", null);
+                    break;
                 case 0x5c: {
                     // [5c][groupe][stat][valeur] : 00 00 = tes HP, 02 04 = ta mana, 02 00 = ton EXP total
                     if (m.length < 4) break;
@@ -631,6 +684,10 @@ public final class GameState {
                         synchronized (this) { hp = v; }
                         log(RECU, "HP: " + v, new Object[]{"hp", "", "", "", "", "", v});
                         mobsChanged();
+                    } else if (grp == 1 && st == 2) {
+                        log(RECU, "Move speed: " + v, null);
+                    } else if (grp == 3 && verbose) {
+                        log(RECU, "Stat 3/" + st + " = " + v, null);
                     } else if (grp == 2 && st == 4) {
                         synchronized (this) { mp = v; }
                         log(RECU, "MP: " + v, new Object[]{"mp", "", "", "", "", "", v});

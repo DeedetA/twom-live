@@ -104,6 +104,12 @@ public final class TwomDecoder {
             if (op == 0x23) {
                 List<byte[]> m = splitBatch(b);
                 if (m != null) return m;
+            } else if (op == 0x4c && b.length == 14 && b[1] == 0 && b[6] == 0 && isIdAt(b, 2) && isIdAt(b, 7)
+                    && b[11] == 1 && b[12] == 1) {
+                // [4c][00][ID][00][ID][01 01][n] : trop court pour que la cle devinee soit fiable
+                List<byte[]> l = new ArrayList<>();
+                l.add(b);
+                return l;
             } else if ((op == 0x47 || op == 0x6c) && b.length >= 5 && knownIds.containsKey(hex(b, 1, 4))) {
                 List<byte[]> l = new ArrayList<>();
                 l.add(b);
@@ -165,7 +171,8 @@ public final class TwomDecoder {
             case 0x69: return x.length == 10 && x[1] == 1 && x[2] == 0 && x[3] == 0;
             case 0x68: return x.length == 10 && x[1] == 0 && x[2] == 1;
             case 0x7e: return x.length == 7;
-            case 0xa4: return x.length >= 12 && x[1] == 0x0d && isIdAt(x, 2) && x[6] == 0;
+            // 0d : utiliser un objet ; 01 / 03 : equiper / retirer
+            case 0xa4: return x.length >= 12 && (x[1] == 0x0d || x[1] == 0x01 || x[1] == 0x03) && isIdAt(x, 2) && x[6] == 0;
             case 0x91: return x.length >= 8 && isIdAt(x, 2);
             // [9e][canal][longueur en octets][texte UTF-16] : ton message de chat
             case 0x9e: return x.length >= 5 && (x[1] & 0xff) < 0x20 && (x[2] & 0xff) == x.length - 3 && (x[2] & 1) == 0;

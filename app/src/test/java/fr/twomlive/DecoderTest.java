@@ -590,6 +590,49 @@ public class DecoderTest {
         assertTrue(sum, sum.contains("HP 1463/1650"));
     }
 
+    @Test
+    public void buffsTeleportEquipement() {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        // trames reelles du 21/11 (17h)
+        gs.message(hexBytes("57 20 81 3f 00 00 00 00 00 12 4f 80 00 00 00 00 00 10 7a c0 14 01"));   // consommable
+        gs.message(hexBytes("57 81 04 8c 38 00 00 00 00 00 00 ea 60 00 00 00 00 00 00 de a8 03 02")); // 3e kill
+        gs.message(hexBytes("5c 01 02 81 02"));
+        gs.message(hexBytes("8e 05"));
+        gs.message(hexBytes("8e 19"));
+        gs.message(hexBytes("8e 07"));
+        // casque retire puis arme remise : vraies trames chiffrees
+        for (String f : new String[]{"c1 35 46 40 2c f0 55 d5 35 15 05 42 fe 55 55 f5 f7 75 d7 96 b7 75 f4 d5 97 d5 55 55 55 55 55 55 13", "46 1c 85 86 b0 de 0c 2c 3c 3c 14 a2 af 0c 0c 6c 5d 3c 4d bd 7d 1c dc 4c 1c 5c 6d 7c 1c 0c 0c 0c 0c 0c 98"}) {
+            byte[] eq = TwomDecoder.decodeClientFrame(hexBytes(f), "98a8cb2d");
+            assertNotNull(f, eq);
+            gs.clientMessage(eq);
+        }
+        java.util.List<String> l;
+        String all;
+        l = gs.lines();
+        all = String.join("\n", l);
+        assertTrue(all, l.get(0).endsWith("Buff #32 started (20 min)"));
+        assertTrue(all, l.get(1).endsWith("Buff #132 started (1 min) x3"));
+        assertTrue(all, l.get(2).endsWith("Move speed: 130"));
+        assertTrue(all, l.get(3).endsWith("Teleporting to Wingfield Beach (map #5)"));
+        assertTrue(all, l.get(4).endsWith("Teleporting to Forest of Grave (map #25)"));
+        assertTrue(all, l.get(5).endsWith("Teleporting to map #7"));
+        assertTrue(all, l.get(6).endsWith("You unequip item #40029"));
+        assertTrue(all, l.get(7).endsWith("You equip item #30010"));
+        assertEquals("6 s", GameState.duration(6000));
+    }
+
+    @Test
+    public void messagesCourts4cToutesCles() {
+        byte[] plain = hexBytes("4c 00 99 a3 d4 61 00 99 a8 80 05 01 01 0d 00");
+        int ok = 0;
+        for (int k = 0; k < 256; k++) {
+            java.util.List<byte[]> r = TwomDecoder.decodeFrame(encrypt(plain, k), new java.util.HashMap<String, Object>());
+            if (r.size() == 1 && TwomDecoder.hex(r.get(0), 0, 14).equals("4c0099a3d46100" + "99a8800501010d")) ok++;
+        }
+        assertEquals(256, ok);
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();
