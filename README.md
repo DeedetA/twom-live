@@ -31,6 +31,9 @@ connections as they are and reads the game server stream along the way.
 - **NPCs and gold**: "You talk to NPC #1170", "You sell item #150193 x1 (bag 1, slot 5) to
   NPC #1170", "NPC #1170 offers 500 gold", "You buy article #20 from NPC #1158",
   "You choose option 404 (NPC #1178)", and every change of your gold ("Gold +500", "Gold -495").
+- **Your character**: damage you take ("Yeti Highguard hits you for 6", in orange), HP and MP when
+  the server sends them (potions: "HP: 933", "MP: 164"), and EXP per kill ("+7 EXP (total
+  3,513,818)"). Skill crystal gains are shown with Details ("Skill crystals +0.5").
 - **Moves** (checkbox): every movement around you — who moves, from where to where, how far and how
   fast, facing which way ("Roopa #9694a34d (1007,1546) -> (1007,1525), moved 21 in 0.64 s, facing
   north, stopped").

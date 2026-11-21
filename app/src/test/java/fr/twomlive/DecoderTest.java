@@ -512,6 +512,34 @@ public class DecoderTest {
         assertEquals(0, st.size());
     }
 
+    @Test
+    public void hpManaExpEtDegatsRecus() {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        // trames reelles du 21/11
+        gs.message(hexBytes("62 00 00 97 e1 e9 72"));                       // ton ID
+        gs.message(hexBytes("4d 00 97 e1 c0 37 01 97 e1 e9 72 00 00 06"));   // 6 degats
+        gs.message(hexBytes("4d 00 97 e1 ca 25 01 97 e1 e9 72 01 00 0d"));   // 13, critique
+        gs.message(hexBytes("4d 00 97 e1 c2 5c 01 97 e1 e9 72 02 00 00"));   // rate : rien
+        gs.message(hexBytes("a6 02 05 03"));                                 // cristaux : seulement en Details
+        gs.message(hexBytes("5c 02 00 81 d6 bb 53"));
+        gs.message(hexBytes("5c 02 00 81 d6 bb 5a"));
+        gs.message(hexBytes("5c 00 00 87 25"));                              // potion (capture du 20/11)
+        gs.message(hexBytes("5c 02 04 81 24"));
+        java.util.List<String> l = gs.lines();
+        String all = String.join("\n", l);
+        assertEquals(all, 5, l.size());
+        assertTrue(all, l.get(0).endsWith("?97e1c037 hits you for 6"));
+        assertTrue(all, l.get(1).endsWith("?97e1ca25 hits you for 13 (critical)"));
+        assertTrue(all, l.get(2).endsWith("+7 EXP (total 3,513,818)"));
+        assertTrue(all, l.get(3).endsWith("HP: 933"));
+        assertTrue(all, l.get(4).endsWith("MP: 164"));
+        assertEquals("0.5", GameState.sixths(3));
+        assertEquals("1", GameState.sixths(6));
+        assertEquals("1/6", GameState.sixths(1));
+        assertEquals("3", GameState.sixths(18));
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

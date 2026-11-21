@@ -42,10 +42,10 @@ public final class GameState {
         // "?" = deduit par recoupement, pas encore certain
         Object[][] s = {{0x0a, "character list"}, {0x2b, "handshake"}, {0x43, "move"}, {0x45, "server time"},
                 {0x46, "spawn"}, {0x47, "remove"}, {0x49, "death"}, {0x4d, "attack"}, {0x57, "buff/cooldown timer"},
-                {0x5a, "ack"}, {0x5b, "effect"}, {0x5c, "stat update?"}, {0x5e, "map info"},
+                {0x5a, "ack"}, {0x5b, "effect"}, {0x5c, "stat update"}, {0x5e, "map info"},
                 {0x62, "character info"}, {0x64, "enter map"}, {0x66, "ack"}, {0x6c, "update"},
                 {0x7a, "server url"}, {0x86, "item obtained"}, {0x87, "inventory slot"}, {0x8c, "gold change"}, {0x91, "NPC dialog"},
-                {0x95, "pet info"}, {0x9a, "map data"}, {0xa0, "chat"}, {0xa4, "status"}, {0xa6, "combat state?"},
+                {0x95, "pet info"}, {0x9a, "map data"}, {0xa0, "chat"}, {0xa4, "status"}, {0xa6, "skill crystals gained"},
                 {0xa9, "player info"}, {0xaa, "status"}, {0xac, "guild/friends list"}, {0xb3, "pet update"},
                 {0xbc, "system message"}, {0xca, "character state"}, {0xd6, "entities in view"},
                 {0xd7, "nearby list?"}};
@@ -280,7 +280,7 @@ public final class GameState {
     public synchronized void reset() {
         ents.clear(); mobs.clear(); hits.clear(); lines.clear(); alerted.clear(); inView.clear(); hasSelf = false;
         recentDeaths.clear(); deaths = 0; attacksSent = 0; selfId = null;
-        loading = false; loadingUntil = 0; lastMove.clear();
+        loading = false; loadingUntil = 0; lastMove.clear(); expTotal = 0;
         csv.setLength(0);
         csv.append("time;event;id;name;level;x;y;detail\n");
         for (Listener l : listeners) l.onMobsChanged();
@@ -294,6 +294,15 @@ public final class GameState {
     private String selfId = null;
 
     public synchronized String selfIdHex() { return selfId; }
+
+    private long expTotal = 0;
+
+    /** 3 -> "0.5", 6 -> "1", 1 -> "1/6" */
+    static String sixths(long n) {
+        if (n % 6 == 0) return String.valueOf(n / 6);
+        if (n % 3 == 0) return (n / 6) + ".5";
+        return (n / 6 > 0 ? (n / 6) + " " : "") + (n % 6) + "/6";
+    }
 
     private String nom(String id) {
         if (id.equals(selfId)) return "you";
@@ -555,6 +564,31 @@ public final class GameState {
                     }
                     break;
                 }
+                case 0x5c: {
+                    // [5c][groupe][stat][valeur] : 00 00 = tes HP, 02 04 = ta mana, 02 00 = ton EXP total
+                    if (m.length < 4) break;
+                    int grp = m[1] & 0xff, st = m[2] & 0xff;
+                    long v = TwomDecoder.varint(m, 3, false)[0];
+                    if (grp == 0 && st == 0) log(RECU, "HP: " + v, new Object[]{"hp", "", "", "", "", "", v});
+                    else if (grp == 2 && st == 4) log(RECU, "MP: " + v, new Object[]{"mp", "", "", "", "", "", v});
+                    else if (grp == 2 && st == 0) {
+                        long prev;
+                        synchronized (this) { prev = expTotal; expTotal = v; }
+                        if (prev > 0 && v > prev) log(RECU, String.format(Locale.US, "+%d EXP (total %,d)", v - prev, v),
+                                new Object[]{"exp", "", "", "", "", "", v - prev});
+                        else if (verbose) log(RECU, String.format(Locale.US, "EXP total: %,d", v), null);
+                    }
+                    break;
+                }
+                case 0xa6: {
+                    // [a6][02][05][gain signe en sixiemes de cristal] : +3 = coup (0,5), +6 = critique ou coup mortel (1),
+                    // +1 = coup recu. Les cristaux depenses par tes competences ne sont pas envoyes.
+                    if (m.length >= 4 && m[1] == 2 && m[2] == 5 && verbose) {
+                        long d = TwomDecoder.varint(m, 3, true)[0];
+                        log(RECU, "Skill crystals " + (d >= 0 ? "+" : "-") + sixths(Math.abs(d)), null);
+                    }
+                    break;
+                }
                 case 0x8c: {
                     // [8c][varint signe] : variation de ton or (or ramasse, vente, achat, teleportation payante)
                     long g = TwomDecoder.varint(m, 1, true)[0];
@@ -711,14 +745,25 @@ public final class GameState {
         for (int j = 0; j < n; j++) {
             String tgt = TwomDecoder.hex(m, i, 4);
             i += 6;
+            int res = m[i - 2] & 0xff;             // 0 touche, 1 et 5 critique, 2 rate, 3 bloque
             long[] d = TwomDecoder.varint(m, i, false);
             i = (int) d[1];
             TwomDecoder.Entity mob;
             String who;
+            boolean onMe;
             synchronized (this) {
                 mob = mobs.get(tgt);
                 who = nom(att);
+                onMe = tgt.equals(selfId);
                 if (mob != null) hits.computeIfAbsent(tgt, k -> new LinkedHashMap<>()).merge(who, 1, Integer::sum);
+            }
+            if (onMe && !"you".equals(who)) {
+                if (res == 2 || res == 3) {
+                    if (verbose) log(RECU, who + (res == 2 ? " misses you" : " attacks you (blocked)"), null);
+                } else {
+                    log(ALERTE, who + " hits you for " + d[0] + (res == 1 || res == 5 ? " (critical)" : ""),
+                            new Object[]{"damage_taken", att, who, "", "", "", d[0]});
+                }
             }
             if (mob != null && verbose) log(RECU, ("you".equals(who) ? "You hit " : who + " hits ") + mob.name + " (" + d[0] + ")", null);
         }
