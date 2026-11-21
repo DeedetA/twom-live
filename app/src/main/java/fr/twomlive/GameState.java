@@ -241,7 +241,7 @@ public final class GameState {
         synchronized (this) {
             if (!alerted.add(e.id)) return;          // une seule alerte tant qu'il reste en vue
         }
-        String lvl = e.lvl != null ? " (lvl " + e.lvl + ")" : "";
+        String lvl = e.lvl != null ? " (lvl " + e.lvl + (e.maxHp > 0 ? ", " + e.maxHp + " HP" : "") + ")" : "";
         String rel = relative(e.x, e.y);
         String where = rel != null ? " - " + rel : "";
         log(ALERTE, "ALERT: " + e.name + lvl + (spawned ? " spawned" : " in view") + " at (" + e.x + "," + e.y + ")" + where + " - ID " + e.id,
@@ -396,6 +396,7 @@ public final class GameState {
         for (Map.Entry<String, TwomDecoder.Entity> e : l) {
             TwomDecoder.Entity m = e.getValue();
             sb.append("\n- ").append(m.name).append(" (").append(m.x).append(',').append(m.y).append(')');
+            if (m.hp >= 0) sb.append(" HP ").append(m.hp).append('/').append(m.maxHp);
             Map<String, Integer> att = hits.get(e.getKey());
             if (att != null && !att.isEmpty()) sb.append(" - fighting ").append(String.join(", ", att.keySet()));
         }
@@ -828,6 +829,7 @@ public final class GameState {
                 who = nom(att);
                 onMe = tgt.equals(selfId);
                 if (mob != null) hits.computeIfAbsent(tgt, k -> new LinkedHashMap<>()).merge(who, 1, Integer::sum);
+                if (mob != null && mob.hp >= 0) mob.hp = (int) Math.max(0, mob.hp - d[0]);
             }
             if (onMe && !"you".equals(who)) {
                 if (res == 2 || res == 3) {
@@ -837,7 +839,9 @@ public final class GameState {
                             new Object[]{"damage_taken", att, who, "", "", "", d[0]});
                 }
             }
-            if (mob != null && verbose) log(RECU, ("you".equals(who) ? "You hit " : who + " hits ") + mob.name + " (" + d[0] + ")", null);
+            if (mob != null && verbose) log(RECU, ("you".equals(who) ? "You hit " : who + " hits ") + mob.name + " (" + d[0] + ")"
+                    + (mob.hp >= 0 ? " - HP " + mob.hp + "/" + mob.maxHp : ""), null);
+            if (mob != null && mob.hp >= 0) mobsChanged();
         }
     }
 

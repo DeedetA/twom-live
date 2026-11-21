@@ -39,6 +39,10 @@ connections as they are and reads the game server stream along the way.
   costs** (e.g. `7=2 11=3 12=2`). The estimate corrects itself: it never goes over 5, and casting a
   skill proves you had at least its cost. HP and MP are the last values the server sent (map
   change, potion): the game computes damage and regeneration on the phone.
+- **Mob HP**: read from each mob's data when it comes into view (current and max), then reduced by
+  every hit anyone lands on it. Shown in the mobs panel ("Yeti Highguard (2336,2079) HP 1541/1650"),
+  with Details in the log, and as max HP in Mob alerts (handy when a boss shares a normal mob's
+  sprite). Mob regeneration is not sent, so HP is re-synced each time the server resends the mob.
 - **Moves** (checkbox): every movement around you — who moves, from where to where, how far and how
   fast, facing which way ("Roopa #9694a34d (1007,1546) -> (1007,1525), moved 21 in 0.64 s, facing
   north, stopped").

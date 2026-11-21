@@ -567,6 +567,29 @@ public class DecoderTest {
         assertEquals("0", GameState.sixthsRounded(2));
     }
 
+    @Test
+    public void hpDesMobs() throws Exception {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        gs.message(hexBytes("62 00 00 97 e1 e9 72"));
+        // liste reelle des entites en vue (21/11), avec trois Yeti Highguard et deux Enraged Wings
+        String d6 = new String(resource("/raw_mobhp.txt"), java.nio.charset.StandardCharsets.UTF_8).trim();
+        java.util.List<TwomDecoder.Entity> ents = TwomDecoder.parseEntities(hexBytes(d6), 2);
+        int yetis = 0;
+        for (TwomDecoder.Entity e : ents) {
+            if (e.name.equals("Yeti Highguard")) { yetis++; assertEquals(1650, e.maxHp); assertEquals(1650, e.hp); }
+            if (e.name.equals("Enraged Wings")) assertEquals(1520, e.maxHp);
+        }
+        assertEquals(3, yetis);
+        gs.message(hexBytes(d6));
+        // ton coup de zone : 109, 99 et 187 degats
+        gs.message(hexBytes("4d 03 97 e1 e9 72 03 97 e1 c0 37 00 00 80 6d 97 e1 c1 42 00 00 80 63 97 e1 c2 5c 05 00 81 3b"));
+        String sum = gs.mobsSummary();
+        assertTrue(sum, sum.contains("HP 1541/1650"));
+        assertTrue(sum, sum.contains("HP 1551/1650"));
+        assertTrue(sum, sum.contains("HP 1463/1650"));
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

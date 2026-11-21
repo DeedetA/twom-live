@@ -282,6 +282,8 @@ public final class TwomDecoder {
         public String id, name;
         public int x, y;
         public Integer lvl;
+        /** HP actuels et maximum (-1 si inconnus) : [HP][nom]... 07 01 1f 12 [niveau] 00 00 00 [HP max] */
+        public int hp = -1, maxHp = -1;
     }
 
     public static List<Entity> parseEntities(byte[] m, int start) {
@@ -319,6 +321,20 @@ public final class TwomDecoder {
             if (a + 5 <= m.length && (m[a] & 0xff) == 0x07 && (m[a + 1] & 0xff) == 0x01
                     && (m[a + 2] & 0xff) == 0x1f && (m[a + 3] & 0xff) == 0x12) {
                 e.lvl = m[a + 4] & 0xff;
+                if (a + 9 <= m.length && m[a + 5] == 0 && m[a + 6] == 0 && m[a + 7] == 0) {
+                    long max = varint(m, a + 8, false)[0];
+                    // les HP actuels finissent juste avant la longueur du nom
+                    int k = pos - 1;
+                    if (k > 0 && (m[k] & 0x80) == 0) {
+                        int b = k;
+                        while (b - 1 > 0 && (m[b - 1] & 0x80) != 0 && k - b < 2) b--;
+                        long hp = varint(m, b, false)[0];
+                        if (max > 0 && max < 10_000_000 && hp >= 0 && hp <= max) {
+                            e.maxHp = (int) max;
+                            e.hp = (int) hp;
+                        }
+                    }
+                }
             }
             out.add(e);
         }
