@@ -178,6 +178,15 @@ public final class GameState {
     /** prevenu quand une entite dont le nom est surveille apparait ou entre dans le champ de vision */
     public interface AlertListener {
         void onMatch(TwomDecoder.Entity e, boolean spawned);
+
+        /** autres alertes (inventaire presque plein, joueur ennemi proche) */
+        default void onAlert(String title, String text, String speech) { }
+    }
+
+    private void fireAlert(String title, String text, String speech) {
+        for (AlertListener l : alertListeners) {
+            try { l.onAlert(title, text, speech); } catch (RuntimeException ignored) { }
+        }
     }
 
     private final List<AlertListener> alertListeners = new CopyOnWriteArrayList<>();
@@ -212,6 +221,7 @@ public final class GameState {
     /** connexion au jeu fermee : plus rien n'est en vue */
     public synchronized void clearView() {
         lastMove.clear();
+        players.clear(); playerAlerted.clear();
         inView.clear(); mobs.clear(); hits.clear(); alerted.clear(); hasSelf = false;
         for (Listener l : listeners) l.onMobsChanged();
     }
@@ -283,6 +293,8 @@ public final class GameState {
         recentDeaths.clear(); deaths = 0; attacksSent = 0; selfId = null;
         loading = false; loadingUntil = 0; lastMove.clear(); expTotal = 0;
         crystals = CRYSTAL_MAX; crystalsSeen = false; hp = -1; mp = -1;
+        players.clear(); playerAlerted.clear(); guildNames.clear();
+        bagItem.clear(); bagSlots.clear(); bagMissing.clear(); invExpected = -1; invAlerted = false;
         csv.setLength(0);
         csv.append("time;event;id;name;level;x;y;detail\n");
         for (Listener l : listeners) l.onMobsChanged();
@@ -298,6 +310,171 @@ public final class GameState {
     public synchronized String selfIdHex() { return selfId; }
 
     private long expTotal = 0;
+
+    // ------------------------------------------------------------ joueurs en vue, alerte joueur ennemi
+    private final Map<String, TwomDecoder.Entity> players = new LinkedHashMap<>();
+    private final Map<String, String> guildNames = new HashMap<>();   // identifiant court -> nom (0xa9)
+    private final java.util.Set<String> playerAlerted = new java.util.HashSet<>();
+    private volatile java.util.Set<Integer> enemyFactions = new java.util.HashSet<>();
+    private volatile java.util.Set<Integer> enemyStatuses = new java.util.HashSet<>();
+
+    static java.util.Set<Integer> codes(String s) {
+        java.util.Set<Integer> out = new java.util.HashSet<>();
+        if (s != null) for (String p : s.split("[^0-9]+")) if (!p.isEmpty()) {
+            try { out.add(Integer.parseInt(p)); } catch (NumberFormatException ignored) { }
+        }
+        return out;
+    }
+
+    /** factions a surveiller ("3"), et si non vide, seulement ces statuts ("2") */
+    public void setPlayerAlert(String factions, String statuses) {
+        enemyFactions = codes(factions);
+        enemyStatuses = codes(statuses);
+        synchronized (this) { playerAlerted.clear(); }
+    }
+
+    public synchronized String guildName(String id) {
+        if (id == null) return null;
+        String n = guildNames.get(id);
+        return n != null ? n : "guild " + id;
+    }
+
+    /** "Lekz lvl 34 class 2 [GangsTer] faction 3, status 0" */
+    synchronized String playerInfo(TwomDecoder.Entity p) {
+        StringBuilder sb = new StringBuilder(p.name).append(" lvl ").append(p.plvl);
+        String c = names.nameOrNull(Names.Cat.CLASS, String.valueOf(p.cls));
+        sb.append(' ').append(c != null ? c : "class " + p.cls);
+        if (p.guild != null) sb.append(" [").append(guildName(p.guild)).append(']');
+        if (p.faction >= 0) {
+            String f = names.nameOrNull(Names.Cat.FACTION, String.valueOf(p.faction));
+            sb.append(", ").append(f != null ? f : "faction " + p.faction);
+            String s = names.nameOrNull(Names.Cat.STATUS, String.valueOf(p.status));
+            sb.append(", ").append(s != null ? s : "status " + p.status);
+        }
+        if (p.maxHp > 0) sb.append(", HP ").append(p.hp).append('/').append(p.maxHp);
+        return sb.toString();
+    }
+
+    private void seePlayer(TwomDecoder.Entity p) {
+        if (p.cls >= 0) names.see(Names.Cat.CLASS, p.cls, p.name);
+        if (p.faction >= 0) {
+            names.see(Names.Cat.FACTION, p.faction, p.name);
+            names.see(Names.Cat.STATUS, p.status, p.name);
+        }
+        boolean alert;
+        synchronized (this) {
+            TwomDecoder.Entity old = players.get(p.id);
+            if (old != null && p.faction < 0) { p.faction = old.faction; p.status = old.status; }   // fiche coupee
+            players.put(p.id, p);
+            alert = !enemyFactions.isEmpty() && enemyFactions.contains(p.faction)
+                    && (enemyStatuses.isEmpty() || enemyStatuses.contains(p.status))
+                    && !p.id.equals(selfId) && playerAlerted.add(p.id);
+        }
+        if (!alert) return;
+        String rel = relative(p.x, p.y);
+        String info = playerInfo(p);
+        log(ALERTE, "ENEMY PLAYER: " + info + " at (" + p.x + "," + p.y + ")" + (rel != null ? " - " + rel : ""),
+                new Object[]{"enemy_player", p.id, p.name, p.plvl, p.x, p.y, info});
+        fireAlert("Enemy player: " + p.name + (rel != null ? " - " + rel : ""), info,
+                "Enemy player " + p.name + ", level " + p.plvl + (rel != null ? ", " + rel : ""));
+    }
+
+    private String playersList() {
+        List<TwomDecoder.Entity> l = new ArrayList<>(players.values());
+        if (l.isEmpty()) return "";
+        if (hasSelf) l.sort((a, b) -> Double.compare(Math.hypot(a.x - selfX, a.y - selfY), Math.hypot(b.x - selfX, b.y - selfY)));
+        StringBuilder sb = new StringBuilder("\n\n").append(l.size()).append(" player(s) in view:");
+        int n = 0;
+        for (TwomDecoder.Entity p : l) {
+            if (++n > 20) { sb.append("\n..."); break; }
+            String rel = relative(p.x, p.y);
+            sb.append("\n- ").append(playerInfo(p)).append(rel != null ? " - " + rel : "");
+        }
+        return sb.toString();
+    }
+
+    // ------------------------------------------------------------ inventaire, alerte sac presque plein
+    // A chaque changement de map : 62 04 00 [page][nombre d'entrees] puis [case][objet][00 00][nb props][props][qte][00]...
+    // La page 0 liste tes sacs ; dans les pages 1 a 12, la case 0 est le sac lui-meme.
+    private final Map<Integer, Integer> bagItem = new HashMap<>();
+    private final Map<Integer, java.util.Set<Integer>> bagSlots = new HashMap<>();
+    private final Map<Integer, Integer> bagMissing = new HashMap<>();
+    private int invExpected = -1;
+    private boolean invAlerted = false;
+    /** alerte quand il reste ce nombre de places libres ou moins (0 = jamais) */
+    public volatile int invThreshold = 3;
+
+    private void inventoryPage(byte[] b) {
+        int page = b[3] & 0xff, n = b[4] & 0xff;
+        java.util.Set<Integer> slots = new java.util.TreeSet<>();
+        int bagId = -1, last = -1;
+        for (int i = 5; i + 7 <= b.length; i++) {
+            int s = b[i] & 0xff;
+            boolean head = s > last && s < 32 && (b[i + 1] & 0x80) != 0 && (b[i + 2] & 0x80) != 0 && (b[i + 3] & 0x80) == 0
+                    && b[i + 4] == 0 && b[i + 5] == 0 && (b[i + 6] & 0xff) < 16 && (i == 5 || b[i - 1] == 0 || s == last + 1);
+            if (!head) continue;
+            long item = TwomDecoder.varint(b, i + 1, false)[0];
+            if (s == 0) bagId = (int) item;
+            else slots.add(s);
+            last = s;
+            i += 6;
+        }
+        synchronized (this) {
+            if (page == 0) {
+                bagItem.clear(); bagSlots.clear(); bagMissing.clear();
+                invExpected = n;
+                invAlerted = false;
+                return;
+            }
+            if (bagId >= 0) bagItem.put(page, bagId);
+            bagSlots.put(page, slots);
+            bagMissing.put(page, Math.max(0, n - 1 - slots.size()));
+        }
+        if (bagId >= 0) names.see(Names.Cat.BAG, bagId, null);
+        checkInventory();
+    }
+
+    private void slotChanged(int bag, int slot, boolean empty) {
+        synchronized (this) {
+            java.util.Set<Integer> s = bagSlots.get(bag);
+            if (s == null || slot == 0) return;
+            if (empty) s.remove(slot); else s.add(slot);
+        }
+        checkInventory();
+    }
+
+    /** {places occupees, places au total}, ou null tant que l'inventaire n'est pas connu */
+    public synchronized int[] inventory() {
+        if (invExpected <= 0 || bagSlots.size() < invExpected) return null;
+        int used = 0, cap = 0;
+        for (Map.Entry<Integer, java.util.Set<Integer>> e : bagSlots.entrySet()) {
+            java.util.Set<Integer> s = e.getValue();
+            used += s.size() + bagMissing.getOrDefault(e.getKey(), 0);
+            Integer item = bagItem.get(e.getKey());
+            int c = item != null ? names.bagSlots(item) : 0;
+            int max = 0;
+            for (int x : s) max = Math.max(max, x);
+            cap += Math.max(c, max);
+        }
+        return new int[]{used, cap};
+    }
+
+    private void checkInventory() {
+        int[] inv = inventory();
+        mobsChanged();
+        if (inv == null) return;
+        int free = inv[1] - inv[0], t = invThreshold;
+        boolean fire;
+        synchronized (this) {
+            if (t <= 0 || free > t) { invAlerted = false; return; }
+            fire = !invAlerted;
+            invAlerted = true;
+        }
+        if (!fire) return;
+        String msg = "Inventory almost full: " + free + " free slot" + (free == 1 ? "" : "s") + " (" + inv[0] + "/" + inv[1] + ")";
+        log(ALERTE, msg, new Object[]{"inventory_full", "", "", "", "", "", free});
+        fireAlert(msg, "TWOM Live", "Inventory almost full, " + free + " free slot" + (free == 1 ? "" : "s"));
+    }
 
     // ------------------------------------------------------------ cristaux, HP, mana (en haut du panneau)
     // Le serveur envoie chaque gain de cristaux (en sixiemes), jamais ce que tes competences depensent :
@@ -338,6 +515,8 @@ public final class GameState {
         if (crystalsSeen) sb.append("Crystals ~").append(sixthsRounded(crystals)).append(" / 5");
         if (hp >= 0) sb.append(sb.length() > 0 ? "   " : "").append("HP ").append(hp);
         if (mp >= 0) sb.append(sb.length() > 0 ? "   " : "").append("MP ").append(mp);
+        int[] inv = inventory();
+        if (inv != null) sb.append(sb.length() > 0 ? "   " : "").append("Bag ").append(inv[0]).append('/').append(inv[1]);
         return sb.toString();
     }
 
@@ -390,8 +569,8 @@ public final class GameState {
     public synchronized String mobsSummary() {
         String st = status();
         String head = st.isEmpty() ? "" : st + "\n\n";
-        if (mobs.isEmpty()) return head + "No mobs in view.";
-        return head + mobsList();
+        if (mobs.isEmpty()) return head + "No mobs in view." + playersList();
+        return head + mobsList() + playersList();
     }
 
     private String mobsList() {
@@ -632,6 +811,7 @@ public final class GameState {
                         int bag = m[1] & 0xff, slot = m[2] & 0xff;
                         boolean empty = true;
                         for (int k = 3; k < m.length; k++) if (m[k] != 0) { empty = false; break; }
+                        slotChanged(bag, slot, empty);
                         if (empty) {
                             log(RECU, "Inventory bag " + bag + ", slot " + slot + ": now empty", null);
                         } else {
@@ -744,11 +924,23 @@ public final class GameState {
                     // [62 00 00][id] : identifiant de ton personnage, envoye a la connexion
                     if (m.length == 7 && m[1] == 0 && m[2] == 0) {
                         synchronized (this) { selfId = TwomDecoder.hex(m, 3, 4); }
+                    } else if (m.length > 5 && m[1] == 4 && m[2] == 0) {
+                        inventoryPage(m);
                     } else if (m.length > 20 && m[1] == 2 && m[2] == 0) {
                         // [62 02 00][HP][nom]... : ta fiche, envoyee a chaque arrivee sur une map
                         long v = TwomDecoder.varint(m, 3, false)[0];
                         synchronized (this) { hp = v; }
                         mobsChanged();
+                    }
+                    break;
+                case 0xa9:
+                    // [a9 02][identifiant court][..][01][longueur][nom UTF-16] : nom d'une guilde
+                    if (m.length > 8 && m[1] == 2 && m[5] == 1) {
+                        int len = m[6] & 0xff;
+                        if (len > 0 && len % 2 == 0 && 7 + len <= m.length) {
+                            String gn = new String(m, 7, len, java.nio.charset.StandardCharsets.UTF_16LE);
+                            synchronized (this) { guildNames.put(TwomDecoder.hex(m, 2, 2), gn); }
+                        }
                     }
                     break;
                 case 0xa0:
@@ -848,6 +1040,7 @@ public final class GameState {
                 log(RECU, e.name + " in view at (" + e.x + "," + e.y + ")", null);
             }
             checkWatch(e, op == 0x46);
+            if (e.player) { seePlayer(e); changed = true; }
         }
         if (changed) mobsChanged();
     }
@@ -939,6 +1132,8 @@ public final class GameState {
         TwomDecoder.Entity mob, e;
         synchronized (this) {
             mob = mobs.remove(id);
+            if (players.remove(id) != null) mobsChanged();
+            playerAlerted.remove(id);
             alerted.remove(id);
             inView.remove(id);
             hits.remove(id);

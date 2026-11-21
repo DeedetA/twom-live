@@ -15,7 +15,8 @@ public final class Names {
 
     public enum Cat {
         SKILL("Skills", "skill"), STAT("Stats", "stat"), BUFF("Buffs", "buff"),
-        MAP("Maps", "map"), ITEM("Items", "item"), NPC("NPCs", "NPC");
+        MAP("Maps", "map"), ITEM("Items", "item"), NPC("NPCs", "NPC"), BAG("Bags", "bag"),
+        CLASS("Classes", "class"), FACTION("Factions", "faction"), STATUS("Player status", "status");
 
         public final String title, word;
 
@@ -28,6 +29,7 @@ public final class Names {
         public String name = "";
         public double crystals = 0;
         public int mana = 0;
+        public int slots = 0;         // sacs : nombre de places
         public String last = "";      // derniere valeur vue (stats, duree des buffs...)
         public String note = "";
         public int seen = 0;          // nombre de fois vu depuis le lancement
@@ -109,6 +111,12 @@ public final class Names {
 
     public synchronized void setCrystals(int skill, double c) { create(Cat.SKILL, String.valueOf(skill)).crystals = c; }
 
+    /** nombre de places d'un sac (0 si inconnu) */
+    public synchronized int bagSlots(int bagItem) {
+        Entry e = map.get(key(Cat.BAG, String.valueOf(bagItem)));
+        return e == null ? 0 : e.slots;
+    }
+
     /** lignes d'une categorie, par numero croissant */
     public synchronized List<Entry> list(Cat c) {
         List<Entry> out = new ArrayList<>();
@@ -155,7 +163,7 @@ public final class Names {
         for (Entry e : map.values()) {
             sb.append(e.cat.name()).append('\t').append(esc(e.id)).append('\t').append(esc(e.name)).append('\t')
                     .append(e.crystals).append('\t').append(e.mana).append('\t').append(esc(e.last)).append('\t')
-                    .append(esc(e.note)).append('\n');
+                    .append(esc(e.note)).append('\t').append(e.slots).append('\n');
         }
         return sb.toString();
     }
@@ -174,6 +182,7 @@ public final class Names {
             try { e.mana = Integer.parseInt(f[4]); } catch (NumberFormatException ignored) { }
             e.last = unesc(f[5]);
             e.note = unesc(f[6]);
+            if (f.length > 7) try { e.slots = Integer.parseInt(f[7]); } catch (NumberFormatException ignored) { }
         }
     }
 
@@ -184,12 +193,13 @@ public final class Names {
 
     /** le tableau entier en CSV, pour le partager */
     public synchronized String csv() {
-        StringBuilder sb = new StringBuilder("category,id,name,crystals,mana,last value,note\n");
+        StringBuilder sb = new StringBuilder("category,id,name,crystals,mana,slots,last value,note\n");
         for (Cat c : Cat.values()) {
             for (Entry e : list(c)) {
                 sb.append(c.title).append(',').append(csvCell(e.id)).append(',').append(csvCell(e.name)).append(',')
                         .append(c == Cat.SKILL ? fmt(e.crystals) : "").append(',')
                         .append(c == Cat.SKILL ? String.valueOf(e.mana) : "").append(',')
+                        .append(c == Cat.BAG ? String.valueOf(e.slots) : "").append(',')
                         .append(csvCell(e.last)).append(',').append(csvCell(e.note)).append('\n');
             }
         }
@@ -243,6 +253,29 @@ public final class Names {
         def(Cat.ITEM, "130005", "", "teleport scroll");
         def(Cat.ITEM, "30010", "", "your weapon");
         def(Cat.ITEM, "40029", "", "your helm");
+
+        // sacs : nombre de places devine d'apres la plus haute case vue ; a corriger si besoin
+        def(Cat.BAG, "120012", "", "guess: 7 slots (highest slot seen)");
+        create(Cat.BAG, "120012").slots = 7;
+        def(Cat.BAG, "120022", "", "guess: 7 slots (highest slot seen)");
+        create(Cat.BAG, "120022").slots = 7;
+        def(Cat.BAG, "120028", "", "guess: 8 slots (highest slot seen)");
+        create(Cat.BAG, "120028").slots = 8;
+        def(Cat.BAG, "120074", "", "guess: 8 slots (highest slot seen)");
+        create(Cat.BAG, "120074").slots = 8;
+
+        def(Cat.CLASS, "1", "Warrior", "Usup, Gildart");
+        def(Cat.CLASS, "2", "", "Lekz, Bayyy, Shotguns, EvilArmy...");
+        def(Cat.CLASS, "3", "Mage", "Jiem");
+        def(Cat.CLASS, "4", "", "4dd, SKG, Croagunk...");
+
+        def(Cat.FACTION, "0", "", "T3ss3ract, Gildart, Jiem, Usup, KilerBee: no faction yet?");
+        def(Cat.FACTION, "2", "", "EvilArmy (red PK)");
+        def(Cat.FACTION, "3", "", "Lekz, Bayyy (black PK), Zoe887 (Lanos), Xaririri, LOWTRICK");
+
+        def(Cat.STATUS, "0", "", "most players, Lekz and Bayyy (black PK) included");
+        def(Cat.STATUS, "2", "", "EvilArmy (red PK), LOWTRICK, GOLDBOYS");
+        def(Cat.STATUS, "20", "", "RANG101");
 
         def(Cat.NPC, "1158", "", "village: sells, article #20 = 110 gold");
         def(Cat.NPC, "1170", "", "village: buys resources");

@@ -52,6 +52,14 @@ connections as they are and reads the game server stream along the way.
   yellow, with the last value and a note of what is already known). Type a name and it is used in
   the log ("Power Strike (skill #7)", "Crit rate: 5820"); for skills also their crystal and mana
   costs, which feed the crystal counter. **Share table** sends it as CSV.
+- **Inventory**: read from the inventory pages sent at each map change (page 0 lists your bags,
+  slot 0 of each page is the bag itself), then kept up to date slot by slot. Shown as "Bag 82/86"
+  on the status line. Bag sizes are in Table > Bags (guessed from the highest slot seen, edit them
+  if wrong). **Inventory alert**: notification / vibration / voice when the free slots drop to the
+  number you set (default 3).
+- **Players in view**: level, class, guild, faction code, status code and HP, nearest first.
+  **Enemy player alert**: alert once when a player whose faction code you listed comes into view,
+  optionally only for some status codes. Codes are named in Table > Factions / Player status.
 - **Moves** (checkbox): every movement around you — who moves, from where to where, how far and how
   fast, facing which way ("Roopa #9694a34d (1007,1546) -> (1007,1525), moved 21 in 0.64 s, facing
   north, stopped").

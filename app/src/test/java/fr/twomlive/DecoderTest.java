@@ -692,6 +692,83 @@ public class DecoderTest {
         gs.names.get(Names.Cat.STAT, "3/23").name = "";
     }
 
+    @Test
+    public void inventaireEtAlerte() throws Exception {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        gs.invThreshold = 3;
+        java.util.List<String> alerts = new java.util.ArrayList<>();
+        GameState.AlertListener al = new GameState.AlertListener() {
+            @Override public void onMatch(TwomDecoder.Entity e, boolean spawned) { }
+            @Override public void onAlert(String title, String text, String speech) { alerts.add(title); }
+        };
+        gs.addAlertListener(al);
+        try {
+            // les 13 pages reelles envoyees a l'entree sur une map (21/11, 21h11)
+            String all = new String(resource("/raw_inventory.txt"), java.nio.charset.StandardCharsets.UTF_8);
+            for (String line : all.split("\n")) if (!line.trim().isEmpty()) gs.message(hexBytes(line.trim()));
+            int[] inv = gs.inventory();
+            assertNotNull(inv);
+            assertEquals(82, inv[0]);
+            assertEquals(86, inv[1]);
+            assertTrue(gs.status(), gs.status().contains("Bag 82/86"));
+            assertTrue(alerts.isEmpty());
+            gs.message(hexBytes("87 02 03 89 95 04 00 00 00 01 00"));      // un objet dans une case libre
+            assertEquals(83, gs.inventory()[0]);
+            assertEquals(java.util.Arrays.asList("Inventory almost full: 3 free slots (83/86)"), alerts);
+            gs.message(hexBytes("87 01 05 00 00 00 00 00 00 00 00"));      // une case videe (vente)
+            gs.message(hexBytes("87 02 03 89 95 04 00 00 00 01 00"));      // deja occupee : rien ne change
+            assertEquals(82, gs.inventory()[0]);
+            assertEquals(1, alerts.size());
+        } finally {
+            gs.removeAlertListener(al);
+        }
+    }
+
+    @Test
+    public void joueursEtAlerteEnnemi() throws Exception {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        java.util.List<String> alerts = new java.util.ArrayList<>();
+        GameState.AlertListener al = new GameState.AlertListener() {
+            @Override public void onMatch(TwomDecoder.Entity e, boolean spawned) { }
+            @Override public void onAlert(String title, String text, String speech) { alerts.add(title + " | " + text); }
+        };
+        gs.addAlertListener(al);
+        try {
+            String d6 = new String(resource("/raw_players.txt"), java.nio.charset.StandardCharsets.UTF_8).trim();
+            TwomDecoder.Entity lekz = null;
+            for (TwomDecoder.Entity e : TwomDecoder.parseEntities(hexBytes(d6), 2)) if (e.name.equals("Lekz")) lekz = e;
+            assertNotNull(lekz);
+            assertTrue(lekz.player);
+            assertEquals(34, lekz.plvl);
+            assertEquals(2, lekz.cls);
+            assertEquals(3, lekz.faction);
+            assertEquals(0, lekz.status);
+            assertEquals("9b1a", lekz.guild);
+            assertEquals(598, lekz.maxHp);
+
+            gs.message(hexBytes("a9 02 9b 1a 02 01 10 47 00 61 00 6e 00 67 00 73 00 54 00 65 00 72 00 03"));
+            gs.setPlayerAlert("3", "");
+            gs.message(hexBytes(d6));
+            assertTrue(alerts.toString(), alerts.stream().anyMatch(x -> x.startsWith("Enemy player: Lekz")));
+            assertTrue(alerts.toString(), alerts.stream().anyMatch(x -> x.contains("Lekz lvl 34 class 2 [GangsTer], faction 3, status 0")));
+            assertTrue(gs.mobsSummary(), gs.mobsSummary().contains("player(s) in view"));
+            int n = alerts.size();
+            gs.message(hexBytes(d6));                    // toujours en vue : pas de nouvelle alerte
+            assertEquals(n, alerts.size());
+            // seulement le statut 2 : Lekz (statut 0) ne declenche plus rien
+            gs.reset();
+            alerts.clear();
+            gs.setPlayerAlert("3", "2");
+            gs.message(hexBytes(d6));
+            assertFalse(alerts.toString(), alerts.stream().anyMatch(x -> x.startsWith("Enemy player: Lekz")));
+        } finally {
+            gs.removeAlertListener(al);
+            gs.setPlayerAlert("", "");
+        }
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

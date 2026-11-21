@@ -194,6 +194,29 @@ public class MainActivity extends Activity implements GameState.Listener {
                 (c, on) -> prefs.edit().putBoolean(Alerter.KEY_VIBRATE, on).apply());
         option(p, "Voice", null, prefs.getBoolean(Alerter.KEY_VOICE, false),
                 (c, on) -> prefs.edit().putBoolean(Alerter.KEY_VOICE, on).apply());
+        p.addView(header("Inventory alert"));
+        p.addView(labeledField("Alert when free slots are at most (0 = off)", prefs.getString(Alerter.KEY_INV, "3"), true, s -> {
+            prefs.edit().putString(Alerter.KEY_INV, s).apply();
+            try { gs.invThreshold = Integer.parseInt(s.trim()); } catch (NumberFormatException e) { gs.invThreshold = 0; }
+        }));
+
+        p.addView(header("Enemy player alert"));
+        p.addView(labeledField("Faction codes to watch, e.g. 3 (see Table > Factions; empty = off)",
+                prefs.getString(Alerter.KEY_ENEMY_FACTIONS, ""), false, s -> {
+                    prefs.edit().putString(Alerter.KEY_ENEMY_FACTIONS, s).apply();
+                    gs.setPlayerAlert(s, prefs.getString(Alerter.KEY_ENEMY_STATUSES, ""));
+                }));
+        p.addView(labeledField("Only with these status codes, e.g. 2 (empty = any status)",
+                prefs.getString(Alerter.KEY_ENEMY_STATUSES, ""), false, s -> {
+                    prefs.edit().putString(Alerter.KEY_ENEMY_STATUSES, s).apply();
+                    gs.setPlayerAlert(prefs.getString(Alerter.KEY_ENEMY_FACTIONS, ""), s);
+                }));
+        TextView how = new TextView(this);
+        how.setText("Alerts use the same notification, vibration and voice settings as the Mob alert.");
+        how.setTextSize(12);
+        how.setTextColor(Color.rgb(110, 110, 110));
+        p.addView(how);
+
         Button test = new Button(this);
         test.setText("Test the alert");
         test.setAllCaps(false);
@@ -205,6 +228,27 @@ public class MainActivity extends Activity implements GameState.Listener {
         ScrollView sv = new ScrollView(this);
         sv.addView(p);
         return sv;
+    }
+
+    private LinearLayout labeledField(String label, String value, boolean number, Setter set) {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextSize(13);
+        l.addView(t);
+        EditText e = new EditText(this);
+        e.setSingleLine(true);
+        e.setText(value);
+        e.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        if (number) e.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        e.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable s) { set.set(s.toString()); }
+        });
+        l.addView(e);
+        return l;
     }
 
     // ------------------------------------------------ onglet 2 : log
@@ -410,6 +454,8 @@ public class MainActivity extends Activity implements GameState.Listener {
         java.util.List<Names.Entry> list = names.list(tableCat);
         boolean skill = tableCat == Names.Cat.SKILL;
         boolean valued = tableCat == Names.Cat.STAT || tableCat == Names.Cat.BUFF;
+        boolean bag = tableCat == Names.Cat.BAG;
+        boolean example = tableCat == Names.Cat.CLASS || tableCat == Names.Cat.FACTION || tableCat == Names.Cat.STATUS;
         tableInfo.setText(list.size() + " seen, " + names.unnamed(tableCat) + " without a name (yellow). "
                 + (skill ? "Crystal costs feed the crystal counter." : "Names are used in the log."));
         tableRows.removeAllViews();
@@ -424,6 +470,8 @@ public class MainActivity extends Activity implements GameState.Listener {
             h.addView(cellText("Mana", 70, true, head));
         }
         if (valued) h.addView(cellText(tableCat == Names.Cat.STAT ? "Last value" : "Duration", 90, true, head));
+        if (bag) h.addView(cellText("Slots", 70, true, head));
+        if (example) h.addView(cellText("Last player", 120, true, head));
         h.addView(cellText("Seen", 56, true, head));
         h.addView(cellText("Note", 260, true, head));
         tableRows.addView(h);
@@ -443,6 +491,10 @@ public class MainActivity extends Activity implements GameState.Listener {
                 }));
             }
             if (valued) r.addView(cellText(e.last, 90, false, fill));
+            if (bag) r.addView(cellEdit(e.slots == 0 ? "" : String.valueOf(e.slots), 70, true, fill, s -> {
+                try { e.slots = s.trim().isEmpty() ? 0 : Integer.parseInt(s.trim()); } catch (NumberFormatException ignored) { }
+            }));
+            if (example) r.addView(cellText(e.last, 120, false, fill));
             r.addView(cellText(e.seen == 0 ? "" : String.valueOf(e.seen), 56, false, fill));
             r.addView(cellEdit(e.note, 260, false, fill, s -> e.note = s));
             tableRows.addView(r);

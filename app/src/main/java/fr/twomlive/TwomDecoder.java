@@ -291,6 +291,51 @@ public final class TwomDecoder {
         public Integer lvl;
         /** HP actuels et maximum (-1 si inconnus) : [HP][nom]... 07 01 1f 12 [niveau] 00 00 00 [HP max] */
         public int hp = -1, maxHp = -1;
+        /** joueur : [HP][nom] 05|06 01 1f 12 [niveau][classe] 00 00 [HP max] ... [guilde]... [faction?][statut?] */
+        public boolean player;
+        public int plvl = -1, cls = -1, faction = -1, status = -1;
+        public String guild;     // identifiant court de guilde (hex), nom envoye par 0xa9
+    }
+
+    /** HP actuels : le varint qui finit juste avant l'octet de longueur du nom (pos) */
+    private static int hpBefore(byte[] m, int pos, long max) {
+        int k = pos - 1;
+        if (k <= 0 || (m[k] & 0x80) != 0) return -1;
+        int b = k;
+        while (b - 1 > 0 && (m[b - 1] & 0x80) != 0 && k - b < 2) b--;
+        long hp = varint(m, b, false)[0];
+        return max > 0 && max < 10_000_000 && hp >= 0 && hp <= max ? (int) hp : -1;
+    }
+
+    /** fin de fiche d'un joueur, a partir de l'octet qui suit son nom */
+    private static void parsePlayer(byte[] m, int a, int pos, Entity e) {
+        e.player = true;
+        e.plvl = m[a + 4] & 0xff;
+        e.cls = m[a + 5] & 0xff;
+        if (a + 9 > m.length || m[a + 6] != 0 || m[a + 7] != 0) return;
+        long max = varint(m, a + 8, false)[0];
+        int hp = hpBefore(m, pos, max);
+        if (hp >= 0) { e.maxHp = (int) max; e.hp = hp; }
+        // bloc fixe "0a" + 10 x (?? 00 01), juste apres la guilde
+        int k = -1;
+        for (int i = a + 10; i < Math.min(m.length - 31, a + 40); i++) {
+            if (m[i] != 0x0a) continue;
+            boolean ok = true;
+            for (int j = 0; j < 10 && ok; j++) ok = (m[i + 1 + 3 * j] & 0x80) == 0 && m[i + 2 + 3 * j] == 0 && m[i + 3 + 3 * j] == 1;
+            if (ok) { k = i; break; }
+        }
+        if (k < 0) return;
+        if (m[k - 1] != 0 && (m[k - 2] & 0x80) != 0) e.guild = hex(m, k - 2, 2);
+        try {
+            int j = k + 31;
+            for (int s = 0; s < 8; s++) j = (int) varint(m, j, false)[1];      // 8 emplacements (objets visibles ?)
+            j = (int) varint(m, j, false)[1];
+            long[] f = varint(m, j, false);
+            long[] st = varint(m, (int) f[1], false);
+            if (f[0] < 256 && st[0] < 256) { e.faction = (int) f[0]; e.status = (int) st[0]; }
+        } catch (RuntimeException ignored) {
+            // fiche coupee en fin de message
+        }
     }
 
     public static List<Entity> parseEntities(byte[] m, int start) {
@@ -325,21 +370,18 @@ public final class TwomDecoder {
             e.y = starts.get(idx)[2];
             e.name = new String(bytes(u), StandardCharsets.UTF_16LE);
             int a = pos + 1 + L;
-            if (a + 5 <= m.length && (m[a] & 0xff) == 0x07 && (m[a + 1] & 0xff) == 0x01
+            if (a + 6 <= m.length && (m[a] == 0x05 || m[a] == 0x06) && m[a + 1] == 0x01
+                    && (m[a + 2] & 0xff) == 0x1f && (m[a + 3] & 0xff) == 0x12) {
+                parsePlayer(m, a, pos, e);
+            } else if (a + 5 <= m.length && (m[a] & 0xff) == 0x07 && (m[a + 1] & 0xff) == 0x01
                     && (m[a + 2] & 0xff) == 0x1f && (m[a + 3] & 0xff) == 0x12) {
                 e.lvl = m[a + 4] & 0xff;
                 if (a + 9 <= m.length && m[a + 5] == 0 && m[a + 6] == 0 && m[a + 7] == 0) {
                     long max = varint(m, a + 8, false)[0];
-                    // les HP actuels finissent juste avant la longueur du nom
-                    int k = pos - 1;
-                    if (k > 0 && (m[k] & 0x80) == 0) {
-                        int b = k;
-                        while (b - 1 > 0 && (m[b - 1] & 0x80) != 0 && k - b < 2) b--;
-                        long hp = varint(m, b, false)[0];
-                        if (max > 0 && max < 10_000_000 && hp >= 0 && hp <= max) {
-                            e.maxHp = (int) max;
-                            e.hp = (int) hp;
-                        }
+                    int hp = hpBefore(m, pos, max);       // les HP actuels finissent juste avant la longueur du nom
+                    if (hp >= 0) {
+                        e.maxHp = (int) max;
+                        e.hp = hp;
                     }
                 }
             }
