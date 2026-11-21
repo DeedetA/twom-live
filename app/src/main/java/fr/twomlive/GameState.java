@@ -315,21 +315,13 @@ public final class GameState {
     private final Map<String, TwomDecoder.Entity> players = new LinkedHashMap<>();
     private final Map<String, String> guildNames = new HashMap<>();   // identifiant court -> nom (0xa9)
     private final java.util.Set<String> playerAlerted = new java.util.HashSet<>();
-    private volatile java.util.Set<Integer> enemyFactions = new java.util.HashSet<>();
-    private volatile java.util.Set<Integer> enemyStatuses = new java.util.HashSet<>();
+    public static final int SIDE_ENEMY = 6;
+    private volatile boolean enemyAlert = false, enemyPkOnly = true;
 
-    static java.util.Set<Integer> codes(String s) {
-        java.util.Set<Integer> out = new java.util.HashSet<>();
-        if (s != null) for (String p : s.split("[^0-9]+")) if (!p.isEmpty()) {
-            try { out.add(Integer.parseInt(p)); } catch (NumberFormatException ignored) { }
-        }
-        return out;
-    }
-
-    /** factions a surveiller ("3"), et si non vide, seulement ces statuts ("2") */
-    public void setPlayerAlert(String factions, String statuses) {
-        enemyFactions = codes(factions);
-        enemyStatuses = codes(statuses);
+    /** alerte quand un joueur de la faction adverse arrive en vue ; pkOnly : seulement s'il a un statut PK */
+    public void setPlayerAlert(boolean on, boolean pkOnly) {
+        enemyAlert = on;
+        enemyPkOnly = pkOnly;
         synchronized (this) { playerAlerted.clear(); }
     }
 
@@ -339,17 +331,17 @@ public final class GameState {
         return n != null ? n : "guild " + id;
     }
 
-    /** "Lekz lvl 34 class 2 [GangsTer] faction 3, status 0" */
+    /** "Lekz lvl 34 class 2 [GangsTer], Enemy, Black PK, HP 448/598" */
     synchronized String playerInfo(TwomDecoder.Entity p) {
         StringBuilder sb = new StringBuilder(p.name).append(" lvl ").append(p.plvl);
         String c = names.nameOrNull(Names.Cat.CLASS, String.valueOf(p.cls));
         sb.append(' ').append(c != null ? c : "class " + p.cls);
         if (p.guild != null) sb.append(" [").append(guildName(p.guild)).append(']');
-        if (p.faction >= 0) {
-            String f = names.nameOrNull(Names.Cat.FACTION, String.valueOf(p.faction));
-            sb.append(", ").append(f != null ? f : "faction " + p.faction);
-            String s = names.nameOrNull(Names.Cat.STATUS, String.valueOf(p.status));
-            sb.append(", ").append(s != null ? s : "status " + p.status);
+        String f = names.nameOrNull(Names.Cat.FACTION, String.valueOf(p.side));
+        sb.append(", ").append(f != null ? f : "side " + p.side);
+        if (p.pk >= 0) {
+            String s = names.nameOrNull(Names.Cat.STATUS, String.valueOf(p.pk));
+            sb.append(", ").append(s != null ? s : "PK code " + p.pk);
         }
         if (p.maxHp > 0) sb.append(", HP ").append(p.hp).append('/').append(p.maxHp);
         return sb.toString();
@@ -357,26 +349,24 @@ public final class GameState {
 
     private void seePlayer(TwomDecoder.Entity p) {
         if (p.cls >= 0) names.see(Names.Cat.CLASS, p.cls, p.name);
-        if (p.faction >= 0) {
-            names.see(Names.Cat.FACTION, p.faction, p.name);
-            names.see(Names.Cat.STATUS, p.status, p.name);
-        }
+        names.see(Names.Cat.FACTION, p.side, p.name);
+        if (p.pk >= 0) names.see(Names.Cat.STATUS, p.pk, p.name);
         boolean alert;
         synchronized (this) {
             TwomDecoder.Entity old = players.get(p.id);
-            if (old != null && p.faction < 0) { p.faction = old.faction; p.status = old.status; }   // fiche coupee
+            if (old != null && p.pk < 0) p.pk = old.pk;   // fiche coupee
             players.put(p.id, p);
-            alert = !enemyFactions.isEmpty() && enemyFactions.contains(p.faction)
-                    && (enemyStatuses.isEmpty() || enemyStatuses.contains(p.status))
+            alert = enemyAlert && p.side == SIDE_ENEMY && (!enemyPkOnly || p.pk > 0)
                     && !p.id.equals(selfId) && playerAlerted.add(p.id);
         }
         if (!alert) return;
         String rel = relative(p.x, p.y);
         String info = playerInfo(p);
-        log(ALERTE, "ENEMY PLAYER: " + info + " at (" + p.x + "," + p.y + ")" + (rel != null ? " - " + rel : ""),
+        log(ALERTE, "ENEMY: " + info + " at (" + p.x + "," + p.y + ")" + (rel != null ? " - " + rel : ""),
                 new Object[]{"enemy_player", p.id, p.name, p.plvl, p.x, p.y, info});
-        fireAlert("Enemy player: " + p.name + (rel != null ? " - " + rel : ""), info,
-                "Enemy player " + p.name + ", level " + p.plvl + (rel != null ? ", " + rel : ""));
+        String pkName = p.pk > 0 ? names.nameOrNull(Names.Cat.STATUS, String.valueOf(p.pk)) : null;
+        fireAlert("Enemy" + (pkName != null ? " " + pkName : "") + ": " + p.name + (rel != null ? " - " + rel : ""), info,
+                "Enemy " + (pkName != null ? pkName + " " : "") + p.name + ", level " + p.plvl + (rel != null ? ", " + rel : ""));
     }
 
     private String playersList() {

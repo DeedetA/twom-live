@@ -201,16 +201,16 @@ public class MainActivity extends Activity implements GameState.Listener {
         }));
 
         p.addView(header("Enemy player alert"));
-        p.addView(labeledField("Faction codes to watch, e.g. 3 (see Table > Factions; empty = off)",
-                prefs.getString(Alerter.KEY_ENEMY_FACTIONS, ""), false, s -> {
-                    prefs.edit().putString(Alerter.KEY_ENEMY_FACTIONS, s).apply();
-                    gs.setPlayerAlert(s, prefs.getString(Alerter.KEY_ENEMY_STATUSES, ""));
-                }));
-        p.addView(labeledField("Only with these status codes, e.g. 2 (empty = any status)",
-                prefs.getString(Alerter.KEY_ENEMY_STATUSES, ""), false, s -> {
-                    prefs.edit().putString(Alerter.KEY_ENEMY_STATUSES, s).apply();
-                    gs.setPlayerAlert(prefs.getString(Alerter.KEY_ENEMY_FACTIONS, ""), s);
-                }));
+        option(p, "Alert when a player of the other faction comes into view", null,
+                prefs.getBoolean(Alerter.KEY_ENEMY, true), (c, on) -> {
+                    prefs.edit().putBoolean(Alerter.KEY_ENEMY, on).apply();
+                    gs.setPlayerAlert(on, prefs.getBoolean(Alerter.KEY_ENEMY_PK_ONLY, true));
+                });
+        option(p, "Only player killers (purple, red or black PK)", "White PKs of the other faction are ignored",
+                prefs.getBoolean(Alerter.KEY_ENEMY_PK_ONLY, true), (c, on) -> {
+                    prefs.edit().putBoolean(Alerter.KEY_ENEMY_PK_ONLY, on).apply();
+                    gs.setPlayerAlert(prefs.getBoolean(Alerter.KEY_ENEMY, true), on);
+                });
         TextView how = new TextView(this);
         how.setText("Alerts use the same notification, vibration and voice settings as the Mob alert.");
         how.setTextSize(12);

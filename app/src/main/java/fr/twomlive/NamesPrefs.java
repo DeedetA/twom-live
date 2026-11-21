@@ -14,7 +14,13 @@ final class NamesPrefs {
         attached = true;
         SharedPreferences p = c.getApplicationContext().getSharedPreferences(Alerter.PREFS, Context.MODE_PRIVATE);
         Names n = GameState.INSTANCE.names;
-        n.load(p.getString("names", null));
+        // version 1.25 : "Factions" et "Player status" avaient un autre sens, on repart des valeurs connues
+        java.util.Set<Names.Cat> skip = p.getInt("names_version", 1) < 2
+                ? java.util.EnumSet.of(Names.Cat.FACTION, Names.Cat.STATUS) : java.util.EnumSet.noneOf(Names.Cat.class);
+        n.load(p.getString("names", null), skip);
+        if (!skip.isEmpty()) {
+            p.edit().putInt("names_version", 2).putString("names", n.serialize()).apply();
+        }
         n.onChange = () -> p.edit().putString("names", n.serialize()).apply();
         // ancien champ "Crystal costs" (versions 1.21 a 1.23) : recopie dans le tableau
         String old = p.getString("skill_costs", null);

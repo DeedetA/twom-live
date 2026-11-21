@@ -57,9 +57,10 @@ connections as they are and reads the game server stream along the way.
   on the status line. Bag sizes are in Table > Bags (guessed from the highest slot seen, edit them
   if wrong). **Inventory alert**: notification / vibration / voice when the free slots drop to the
   number you set (default 3).
-- **Players in view**: level, class, guild, faction code, status code and HP, nearest first.
-  **Enemy player alert**: alert once when a player whose faction code you listed comes into view,
-  optionally only for some status codes. Codes are named in Table > Factions / Player status.
+- **Players in view**: level, class, guild, side (Enemy = the other faction, Ally = yours; in the
+  village everyone shows as Ally), PK status (White, Purple, Red, Black) and HP, nearest first.
+  **Enemy player alert**: alert once when a player of the other faction comes into view, by
+  default only if they are a player killer (purple, red or black PK).
 - **Moves** (checkbox): every movement around you — who moves, from where to where, how far and how
   fast, facing which way ("Roopa #9694a34d (1007,1546) -> (1007,1525), moved 21 in 0.64 s, facing
   north, stopped").

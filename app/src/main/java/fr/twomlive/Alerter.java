@@ -25,8 +25,8 @@ public final class Alerter implements GameState.AlertListener {
     public static final String PREFS = "twomlive";
     public static final String KEY_NAME = "watch_name";
     public static final String KEY_INV = "inv_threshold";
-    public static final String KEY_ENEMY_FACTIONS = "enemy_factions";
-    public static final String KEY_ENEMY_STATUSES = "enemy_statuses";
+    public static final String KEY_ENEMY = "enemy_alert";
+    public static final String KEY_ENEMY_PK_ONLY = "enemy_pk_only";
     public static final String KEY_NOTIF = "alert_notification";
     public static final String KEY_VIBRATE = "alert_vibration";
     public static final String KEY_VOICE = "alert_voice";
@@ -60,7 +60,7 @@ public final class Alerter implements GameState.AlertListener {
     /** a appeler au demarrage : charge le nom surveille et prepare la voix si besoin */
     public void attach() {
         GameState.INSTANCE.setWatch(prefs.getString(KEY_NAME, ""));
-        GameState.INSTANCE.setPlayerAlert(prefs.getString(KEY_ENEMY_FACTIONS, ""), prefs.getString(KEY_ENEMY_STATUSES, ""));
+        GameState.INSTANCE.setPlayerAlert(prefs.getBoolean(KEY_ENEMY, true), prefs.getBoolean(KEY_ENEMY_PK_ONLY, true));
         try { GameState.INSTANCE.invThreshold = Integer.parseInt(prefs.getString(KEY_INV, "3").trim()); }
         catch (NumberFormatException e) { GameState.INSTANCE.invThreshold = 0; }
         GameState.INSTANCE.addAlertListener(this);

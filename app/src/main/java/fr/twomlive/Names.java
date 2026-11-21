@@ -16,7 +16,7 @@ public final class Names {
     public enum Cat {
         SKILL("Skills", "skill"), STAT("Stats", "stat"), BUFF("Buffs", "buff"),
         MAP("Maps", "map"), ITEM("Items", "item"), NPC("NPCs", "NPC"), BAG("Bags", "bag"),
-        CLASS("Classes", "class"), FACTION("Factions", "faction"), STATUS("Player status", "status");
+        CLASS("Classes", "class"), FACTION("Factions", "side"), STATUS("PK status", "PK code");
 
         public final String title, word;
 
@@ -169,13 +169,17 @@ public final class Names {
     }
 
     /** recharge ce qui a ete enregistre, par-dessus les valeurs par defaut */
-    public synchronized void load(String s) {
+    public synchronized void load(String s) { load(s, java.util.Collections.emptySet()); }
+
+    /** pareil, sans recharger certaines categories (quand leur sens a change d'une version a l'autre) */
+    public synchronized void load(String s, java.util.Set<Cat> skip) {
         if (s == null) return;
         for (String line : s.split("\n")) {
             String[] f = line.split("\t", -1);
             if (f.length < 7) continue;
             Cat c;
             try { c = Cat.valueOf(f[0]); } catch (IllegalArgumentException ex) { continue; }
+            if (skip.contains(c)) continue;
             Entry e = create(c, unesc(f[1]));
             e.name = unesc(f[2]);
             try { e.crystals = Double.parseDouble(f[3]); } catch (NumberFormatException ignored) { }
@@ -269,13 +273,14 @@ public final class Names {
         def(Cat.CLASS, "3", "Mage", "Jiem");
         def(Cat.CLASS, "4", "", "4dd, SKG, Croagunk...");
 
-        def(Cat.FACTION, "0", "", "T3ss3ract, Gildart, Jiem, Usup, KilerBee: no faction yet?");
-        def(Cat.FACTION, "2", "", "EvilArmy (red PK)");
-        def(Cat.FACTION, "3", "", "Lekz, Bayyy (black PK), Zoe887 (Lanos), Xaririri, LOWTRICK");
+        // relatif a toi : 6 = faction adverse ; au village, tout le monde est a 5
+        def(Cat.FACTION, "5", "Ally", "your faction (Siras: EvilArmy, T3ss3ract...), or anyone in the village");
+        def(Cat.FACTION, "6", "Enemy", "other faction (Lanos: Lekz, Bayyy, Zoe887, KilerBee)");
 
-        def(Cat.STATUS, "0", "", "most players, Lekz and Bayyy (black PK) included");
-        def(Cat.STATUS, "2", "", "EvilArmy (red PK), LOWTRICK, GOLDBOYS");
-        def(Cat.STATUS, "20", "", "RANG101");
+        def(Cat.STATUS, "0", "White PK", "has not killed anyone");
+        def(Cat.STATUS, "1", "Purple PK", "guess: attacked a player without killing");
+        def(Cat.STATUS, "2", "Red PK", "killed someone in the last hour (EvilArmy)");
+        def(Cat.STATUS, "3", "Black PK", "red PK who died since (Lekz, Bayyy, Zoe887)");
 
         def(Cat.NPC, "1158", "", "village: sells, article #20 = 110 gold");
         def(Cat.NPC, "1170", "", "village: buys resources");

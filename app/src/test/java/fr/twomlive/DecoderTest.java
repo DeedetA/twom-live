@@ -736,36 +736,42 @@ public class DecoderTest {
         };
         gs.addAlertListener(al);
         try {
+            // vraie liste du 21/11 a 21:21:47, sur la map 4 : Lekz (Lanos, PK noir) et des joueurs Siras
             String d6 = new String(resource("/raw_players.txt"), java.nio.charset.StandardCharsets.UTF_8).trim();
             TwomDecoder.Entity lekz = null;
-            for (TwomDecoder.Entity e : TwomDecoder.parseEntities(hexBytes(d6), 2)) if (e.name.equals("Lekz")) lekz = e;
+            int allies = 0;
+            for (TwomDecoder.Entity e : TwomDecoder.parseEntities(hexBytes(d6), 2)) {
+                if (e.name.equals("Lekz")) lekz = e;
+                else if (e.player && e.side == 5) allies++;
+            }
             assertNotNull(lekz);
             assertTrue(lekz.player);
             assertEquals(34, lekz.plvl);
             assertEquals(2, lekz.cls);
-            assertEquals(3, lekz.faction);
-            assertEquals(0, lekz.status);
+            assertEquals(6, lekz.side);
+            assertEquals(3, lekz.pk);
             assertEquals("9b1a", lekz.guild);
             assertEquals(598, lekz.maxHp);
+            assertTrue(allies > 0);
 
             gs.message(hexBytes("a9 02 9b 1a 02 01 10 47 00 61 00 6e 00 67 00 73 00 54 00 65 00 72 00 03"));
-            gs.setPlayerAlert("3", "");
+            gs.setPlayerAlert(true, true);
             gs.message(hexBytes(d6));
-            assertTrue(alerts.toString(), alerts.stream().anyMatch(x -> x.startsWith("Enemy player: Lekz")));
-            assertTrue(alerts.toString(), alerts.stream().anyMatch(x -> x.contains("Lekz lvl 34 class 2 [GangsTer], faction 3, status 0")));
+            assertEquals(alerts.toString(), 1, alerts.size());
+            assertTrue(alerts.toString(), alerts.get(0).startsWith("Enemy Black PK: Lekz"));
+            assertTrue(alerts.toString(), alerts.get(0).contains("Lekz lvl 34 class 2 [GangsTer], Enemy, Black PK, HP"));
             assertTrue(gs.mobsSummary(), gs.mobsSummary().contains("player(s) in view"));
-            int n = alerts.size();
             gs.message(hexBytes(d6));                    // toujours en vue : pas de nouvelle alerte
-            assertEquals(n, alerts.size());
-            // seulement le statut 2 : Lekz (statut 0) ne declenche plus rien
+            assertEquals(1, alerts.size());
+            // alerte desactivee : rien
             gs.reset();
             alerts.clear();
-            gs.setPlayerAlert("3", "2");
+            gs.setPlayerAlert(false, true);
             gs.message(hexBytes(d6));
-            assertFalse(alerts.toString(), alerts.stream().anyMatch(x -> x.startsWith("Enemy player: Lekz")));
+            assertTrue(alerts.toString(), alerts.isEmpty());
         } finally {
             gs.removeAlertListener(al);
-            gs.setPlayerAlert("", "");
+            gs.setPlayerAlert(false, true);
         }
     }
 

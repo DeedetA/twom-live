@@ -291,9 +291,13 @@ public final class TwomDecoder {
         public Integer lvl;
         /** HP actuels et maximum (-1 si inconnus) : [HP][nom]... 07 01 1f 12 [niveau] 00 00 00 [HP max] */
         public int hp = -1, maxHp = -1;
-        /** joueur : [HP][nom] 05|06 01 1f 12 [niveau][classe] 00 00 [HP max] ... [guilde]... [faction?][statut?] */
+        /**
+         * joueur : [HP][nom] [camp] 01 1f 12 [niveau][classe] 00 00 [HP max] ... [guilde] ... [statut PK][?]
+         * camp : 06 = faction adverse (attaquable), 05 = ta faction (ou zone sure : au village tout le monde est a 05)
+         * statut PK : 0 blanc, 2 rouge (a tue dans l'heure), 3 noir (rouge puis mort), 1 = violet ?
+         */
         public boolean player;
-        public int plvl = -1, cls = -1, faction = -1, status = -1;
+        public int plvl = -1, cls = -1, side = -1, pk = -1;
         public String guild;     // identifiant court de guilde (hex), nom envoye par 0xa9
     }
 
@@ -310,6 +314,7 @@ public final class TwomDecoder {
     /** fin de fiche d'un joueur, a partir de l'octet qui suit son nom */
     private static void parsePlayer(byte[] m, int a, int pos, Entity e) {
         e.player = true;
+        e.side = m[a] & 0xff;
         e.plvl = m[a + 4] & 0xff;
         e.cls = m[a + 5] & 0xff;
         if (a + 9 > m.length || m[a + 6] != 0 || m[a + 7] != 0) return;
@@ -332,7 +337,7 @@ public final class TwomDecoder {
             j = (int) varint(m, j, false)[1];
             long[] f = varint(m, j, false);
             long[] st = varint(m, (int) f[1], false);
-            if (f[0] < 256 && st[0] < 256) { e.faction = (int) f[0]; e.status = (int) st[0]; }
+            if (f[0] < 256 && st[0] < 256) e.pk = (int) f[0];
         } catch (RuntimeException ignored) {
             // fiche coupee en fin de message
         }
