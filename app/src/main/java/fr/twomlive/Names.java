@@ -258,14 +258,14 @@ public final class Names {
         def(Cat.ITEM, "30010", "", "your weapon");
         def(Cat.ITEM, "40029", "", "your helm");
 
-        // sacs : nombre de places devine d'apres la plus haute case vue ; a corriger si besoin
-        def(Cat.BAG, "120012", "", "guess: 7 slots (highest slot seen)");
+        // sacs : nombre de places (confirme par le joueur : 10 sacs de 7, 2 de 8)
+        def(Cat.BAG, "120012", "", "7 slots");
         create(Cat.BAG, "120012").slots = 7;
-        def(Cat.BAG, "120022", "", "guess: 7 slots (highest slot seen)");
+        def(Cat.BAG, "120022", "", "7 slots");
         create(Cat.BAG, "120022").slots = 7;
-        def(Cat.BAG, "120028", "", "guess: 8 slots (highest slot seen)");
+        def(Cat.BAG, "120028", "", "8 slots");
         create(Cat.BAG, "120028").slots = 8;
-        def(Cat.BAG, "120074", "", "guess: 8 slots (highest slot seen)");
+        def(Cat.BAG, "120074", "", "8 slots");
         create(Cat.BAG, "120074").slots = 8;
 
         def(Cat.CLASS, "1", "Warrior", "Usup, Gildart");

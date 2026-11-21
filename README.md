@@ -52,11 +52,11 @@ connections as they are and reads the game server stream along the way.
   yellow, with the last value and a note of what is already known). Type a name and it is used in
   the log ("Power Strike (skill #7)", "Crit rate: 5820"); for skills also their crystal and mana
   costs, which feed the crystal counter. **Share table** sends it as CSV.
-- **Inventory**: read from the inventory pages sent at each map change (page 0 lists your bags,
-  slot 0 of each page is the bag itself), then kept up to date slot by slot. Shown as "Bag 82/86"
-  on the status line. Bag sizes are in Table > Bags (guessed from the highest slot seen, edit them
-  if wrong). **Inventory alert**: notification / vibration / voice when the free slots drop to the
-  number you set (default 3).
+- **Inventory**: read from the inventory pages sent at each map change, then kept up to date slot
+  by slot. The inventory has 12 base slots; each bag takes one of them and adds its own slots, so
+  usable slots = 12 + bag sizes - number of bags (10 bags of 7 and 2 of 8 = 86). Shown as
+  "Bag 82/86" on the status line. Bag sizes are in Table > Bags. **Inventory alert**: notification /
+  vibration / voice when the free slots drop to the number you set (default 3).
 - **Players in view**: level, class, guild, side (Enemy = the other faction, Ally = yours; in the
   village everyone shows as Ally), PK status (White, Purple, Red, Black) and HP, nearest first.
   **Enemy player alert**: alert once when a player of the other faction comes into view, by

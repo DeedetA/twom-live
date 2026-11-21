@@ -720,6 +720,18 @@ public class DecoderTest {
             gs.message(hexBytes("87 02 03 89 95 04 00 00 00 01 00"));      // deja occupee : rien ne change
             assertEquals(82, gs.inventory()[0]);
             assertEquals(1, alerts.size());
+
+            // sans sac : 12 places de base ; avec un sac de 7 places : 12 - 1 + 7 = 18
+            gs.reset();
+            gs.message(hexBytes("62 04 00 00 02 00 89 95 04 00 00 00 04 00 01 89 95 11 00 00 00 01 00"));
+            assertArrayEquals(new int[]{2, 12}, gs.inventory());
+            gs.reset();
+            gs.message(hexBytes("62 04 00 00 02 00 87 a9 4b 00 00 01 45 01 01 00 01 89 95 11 00 00 00 01 00"));
+            assertNull(gs.inventory());                                   // page du sac pas encore arrivee
+            gs.message(hexBytes("62 04 00 01 02 00 87 a9 4c 00 00 01 45 01 01 00 01 89 95 04 00 00 00 04 00"));
+            assertArrayEquals(new int[]{2, 18}, gs.inventory());
+            gs.message(hexBytes("87 00 05 89 95 3c 00 00 00 01 00"));      // une place de base de plus
+            assertArrayEquals(new int[]{3, 18}, gs.inventory());
         } finally {
             gs.removeAlertListener(al);
         }

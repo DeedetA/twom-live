@@ -294,7 +294,7 @@ public final class GameState {
         loading = false; loadingUntil = 0; lastMove.clear(); expTotal = 0;
         crystals = CRYSTAL_MAX; crystalsSeen = false; hp = -1; mp = -1;
         players.clear(); playerAlerted.clear(); guildNames.clear();
-        bagItem.clear(); bagSlots.clear(); bagMissing.clear(); invExpected = -1; invAlerted = false;
+        bagItem.clear(); bagSlots.clear(); bagMissing.clear(); baseBags.clear(); invExpected = -1; invAlerted = false;
         csv.setLength(0);
         csv.append("time;event;id;name;level;x;y;detail\n");
         for (Listener l : listeners) l.onMobsChanged();
@@ -385,18 +385,24 @@ public final class GameState {
 
     // ------------------------------------------------------------ inventaire, alerte sac presque plein
     // A chaque changement de map : 62 04 00 [page][nombre d'entrees] puis [case][objet][00 00][nb props][props][qte][00]...
-    // La page 0 liste tes sacs ; dans les pages 1 a 12, la case 0 est le sac lui-meme.
-    private final Map<Integer, Integer> bagItem = new HashMap<>();
-    private final Map<Integer, java.util.Set<Integer>> bagSlots = new HashMap<>();
+    // Page 0 = les 12 places de base de l'inventaire. Chaque sac y prend une place et ajoute une page
+    // (1, 2...) dont la case 0 est le sac lui-meme. Places utilisables = 12 + taille des sacs - nombre de sacs.
+    public static final int BASE_SLOTS = 12;
+    private final Map<Integer, Integer> bagItem = new HashMap<>();             // page -> numero du sac
+    private final Map<Integer, java.util.Set<Integer>> bagSlots = new HashMap<>(); // page -> cases occupees
     private final Map<Integer, Integer> bagMissing = new HashMap<>();
-    private int invExpected = -1;
+    private final java.util.Set<Integer> baseBags = new java.util.HashSet<>(); // places de base occupees par un sac
+    private int invExpected = -1;                                              // nombre de sacs
     private boolean invAlerted = false;
     /** alerte quand il reste ce nombre de places libres ou moins (0 = jamais) */
     public volatile int invThreshold = 3;
 
+    static boolean isBag(long item) { return item >= 120000 && item < 121000; }
+
     private void inventoryPage(byte[] b) {
         int page = b[3] & 0xff, n = b[4] & 0xff;
         java.util.Set<Integer> slots = new java.util.TreeSet<>();
+        java.util.Set<Integer> bags = new java.util.HashSet<>();
         int bagId = -1, last = -1;
         for (int i = 5; i + 7 <= b.length; i++) {
             int s = b[i] & 0xff;
@@ -404,21 +410,30 @@ public final class GameState {
                     && b[i + 4] == 0 && b[i + 5] == 0 && (b[i + 6] & 0xff) < 16 && (i == 5 || b[i - 1] == 0 || s == last + 1);
             if (!head) continue;
             long item = TwomDecoder.varint(b, i + 1, false)[0];
-            if (s == 0) bagId = (int) item;
-            else slots.add(s);
+            if (page == 0) {
+                slots.add(s);
+                if (isBag(item)) bags.add(s);
+            } else if (s == 0) {
+                bagId = (int) item;
+            } else {
+                slots.add(s);
+            }
             last = s;
             i += 6;
         }
         synchronized (this) {
             if (page == 0) {
-                bagItem.clear(); bagSlots.clear(); bagMissing.clear();
-                invExpected = n;
+                bagItem.clear(); bagSlots.clear(); bagMissing.clear(); baseBags.clear();
+                baseBags.addAll(bags);
+                invExpected = bags.size();
                 invAlerted = false;
-                return;
+                bagSlots.put(0, slots);
+                bagMissing.put(0, Math.max(0, n - slots.size()));
+            } else {
+                if (bagId >= 0) bagItem.put(page, bagId);
+                bagSlots.put(page, slots);
+                bagMissing.put(page, Math.max(0, n - 1 - slots.size()));
             }
-            if (bagId >= 0) bagItem.put(page, bagId);
-            bagSlots.put(page, slots);
-            bagMissing.put(page, Math.max(0, n - 1 - slots.size()));
         }
         if (bagId >= 0) names.see(Names.Cat.BAG, bagId, null);
         checkInventory();
@@ -427,17 +442,25 @@ public final class GameState {
     private void slotChanged(int bag, int slot, boolean empty) {
         synchronized (this) {
             java.util.Set<Integer> s = bagSlots.get(bag);
-            if (s == null || slot == 0) return;
+            if (s == null || (bag > 0 && slot == 0)) return;
             if (empty) s.remove(slot); else s.add(slot);
+            if (bag == 0 && empty) baseBags.remove(slot);
         }
         checkInventory();
     }
 
-    /** {places occupees, places au total}, ou null tant que l'inventaire n'est pas connu */
+    /**
+     * {places occupees, places utilisables}, sans compter les places prises par les sacs eux-memes,
+     * ou null tant que toutes les pages ne sont pas arrivees.
+     */
     public synchronized int[] inventory() {
-        if (invExpected <= 0 || bagSlots.size() < invExpected) return null;
-        int used = 0, cap = 0;
+        java.util.Set<Integer> base = bagSlots.get(0);
+        if (invExpected < 0 || base == null || bagSlots.size() < invExpected + 1) return null;
+        int nbags = baseBags.size();
+        int used = base.size() - nbags + bagMissing.getOrDefault(0, 0);
+        int cap = BASE_SLOTS - nbags;
         for (Map.Entry<Integer, java.util.Set<Integer>> e : bagSlots.entrySet()) {
+            if (e.getKey() == 0) continue;
             java.util.Set<Integer> s = e.getValue();
             used += s.size() + bagMissing.getOrDefault(e.getKey(), 0);
             Integer item = bagItem.get(e.getKey());
