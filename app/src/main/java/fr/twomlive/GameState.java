@@ -281,6 +281,7 @@ public final class GameState {
         ents.clear(); mobs.clear(); hits.clear(); lines.clear(); alerted.clear(); inView.clear(); hasSelf = false;
         recentDeaths.clear(); deaths = 0; attacksSent = 0; selfId = null;
         loading = false; loadingUntil = 0; lastMove.clear(); expTotal = 0;
+        crystals = CRYSTAL_MAX; crystalsSeen = false; hp = -1; mp = -1;
         csv.setLength(0);
         csv.append("time;event;id;name;level;x;y;detail\n");
         for (Listener l : listeners) l.onMobsChanged();
@@ -296,6 +297,55 @@ public final class GameState {
     public synchronized String selfIdHex() { return selfId; }
 
     private long expTotal = 0;
+
+    // ------------------------------------------------------------ cristaux, HP, mana (en haut du panneau)
+    // Le serveur envoie chaque gain de cristaux (en sixiemes), jamais ce que tes competences depensent :
+    // on le deduit du cout de chaque competence (reglable). Le compteur se recale tout seul : il ne
+    // depasse pas le maximum, et lancer une competence prouve que tu avais au moins son cout.
+    public static final int CRYSTAL_MAX = 30;                 // 5 cristaux, en sixiemes
+    private int crystals = CRYSTAL_MAX;
+    private boolean crystalsSeen = false;
+    private final Map<Integer, Integer> skillCost = new HashMap<>();   // competence -> cout en sixiemes
+    private long hp = -1, mp = -1;
+
+    /** "7=2 11=3 12=2" : competence = cristaux depenses */
+    public synchronized void setSkillCosts(String spec) {
+        skillCost.clear();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)\\s*=\\s*(\\d+(?:[.,]5)?)").matcher(spec == null ? "" : spec);
+        while (m.find()) {
+            double c = Double.parseDouble(m.group(2).replace(',', '.'));
+            skillCost.put(Integer.parseInt(m.group(1)), (int) Math.round(c * 6));
+        }
+    }
+
+    synchronized void crystalsCast(int skill) {
+        Integer c = skillCost.get(skill);
+        if (c == null || c == 0) return;
+        crystalsSeen = true;
+        crystals = Math.max(crystals, c) - c;
+    }
+
+    synchronized void crystalsGain(long d) {
+        crystalsSeen = true;
+        crystals = (int) Math.max(0, Math.min(CRYSTAL_MAX, crystals + d));
+    }
+
+    public synchronized int crystalsSixths() { return crystals; }
+
+    /** ligne d'etat : cristaux estimes, derniers HP et mana envoyes par le serveur */
+    public synchronized String status() {
+        StringBuilder sb = new StringBuilder();
+        if (crystalsSeen) sb.append("Crystals ~").append(sixthsRounded(crystals)).append(" / 5");
+        if (hp >= 0) sb.append(sb.length() > 0 ? "   " : "").append("HP ").append(hp);
+        if (mp >= 0) sb.append(sb.length() > 0 ? "   " : "").append("MP ").append(mp);
+        return sb.toString();
+    }
+
+    /** arrondi au demi-cristal : 27 -> "4.5" */
+    static String sixthsRounded(int n) {
+        int halves = (int) Math.floor(n / 3.0);
+        return halves % 2 == 0 ? String.valueOf(halves / 2) : (halves / 2) + ".5";
+    }
 
     /** 3 -> "0.5", 6 -> "1", 1 -> "1/6" */
     static String sixths(long n) {
@@ -329,7 +379,13 @@ public final class GameState {
 
     /** resume des mobs en vue, pour l'ecran principal */
     public synchronized String mobsSummary() {
-        if (mobs.isEmpty()) return "No mobs in view.";
+        String st = status();
+        String head = st.isEmpty() ? "" : st + "\n\n";
+        if (mobs.isEmpty()) return head + "No mobs in view.";
+        return head + mobsList();
+    }
+
+    private String mobsList() {
         Map<String, Integer> c = new TreeMap<>();
         for (TwomDecoder.Entity m : mobs.values()) c.merge(m.name + " (lvl " + m.lvl + ")", 1, Integer::sum);
         StringBuilder sb = new StringBuilder(mobs.size() + " mob(s) in view:");
@@ -412,6 +468,7 @@ public final class GameState {
                     String tgt = (isId(m, i) && !filler) ? TwomDecoder.hex(m, i, 4) : null;
                     String tname;
                     setSelf(xv[0], yv[0]);
+                    if (skill != 0) { crystalsCast(skill); mobsChanged(); }
                     synchronized (this) {
                         attacksSent++;
                         tname = tgt == null ? null : nom(tgt);
@@ -569,8 +626,15 @@ public final class GameState {
                     if (m.length < 4) break;
                     int grp = m[1] & 0xff, st = m[2] & 0xff;
                     long v = TwomDecoder.varint(m, 3, false)[0];
-                    if (grp == 0 && st == 0) log(RECU, "HP: " + v, new Object[]{"hp", "", "", "", "", "", v});
-                    else if (grp == 2 && st == 4) log(RECU, "MP: " + v, new Object[]{"mp", "", "", "", "", "", v});
+                    if (grp == 0 && st == 0) {
+                        synchronized (this) { hp = v; }
+                        log(RECU, "HP: " + v, new Object[]{"hp", "", "", "", "", "", v});
+                        mobsChanged();
+                    } else if (grp == 2 && st == 4) {
+                        synchronized (this) { mp = v; }
+                        log(RECU, "MP: " + v, new Object[]{"mp", "", "", "", "", "", v});
+                        mobsChanged();
+                    }
                     else if (grp == 2 && st == 0) {
                         long prev;
                         synchronized (this) { prev = expTotal; expTotal = v; }
@@ -583,9 +647,12 @@ public final class GameState {
                 case 0xa6: {
                     // [a6][02][05][gain signe en sixiemes de cristal] : +3 = coup (0,5), +6 = critique ou coup mortel (1),
                     // +1 = coup recu. Les cristaux depenses par tes competences ne sont pas envoyes.
-                    if (m.length >= 4 && m[1] == 2 && m[2] == 5 && verbose) {
+                    if (m.length >= 4 && m[1] == 2 && m[2] == 5) {
                         long d = TwomDecoder.varint(m, 3, true)[0];
-                        log(RECU, "Skill crystals " + (d >= 0 ? "+" : "-") + sixths(Math.abs(d)), null);
+                        crystalsGain(d);
+                        if (verbose) log(RECU, "Skill crystals " + (d >= 0 ? "+" : "-") + sixths(Math.abs(d))
+                                + " (~" + sixthsRounded(crystalsSixths()) + "/5)", null);
+                        mobsChanged();
                     }
                     break;
                 }
@@ -616,6 +683,11 @@ public final class GameState {
                     // [62 00 00][id] : identifiant de ton personnage, envoye a la connexion
                     if (m.length == 7 && m[1] == 0 && m[2] == 0) {
                         synchronized (this) { selfId = TwomDecoder.hex(m, 3, 4); }
+                    } else if (m.length > 20 && m[1] == 2 && m[2] == 0) {
+                        // [62 02 00][HP][nom]... : ta fiche, envoyee a chaque arrivee sur une map
+                        long v = TwomDecoder.varint(m, 3, false)[0];
+                        synchronized (this) { hp = v; }
+                        mobsChanged();
                     }
                     break;
                 case 0xa0:

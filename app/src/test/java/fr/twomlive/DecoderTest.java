@@ -540,6 +540,33 @@ public class DecoderTest {
         assertEquals("3", GameState.sixths(18));
     }
 
+    @Test
+    public void estimationDesCristaux() {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        gs.setSkillCosts("7=2 11=3 12=2, 4=1.5");
+        assertEquals("", gs.status());                    // rien vu : pas d'affichage
+        // sequence reelle du 21/11 : competences 11 et 12, puis coups de zone
+        gs.crystalsCast(11);
+        gs.crystalsCast(12);
+        assertEquals(0, gs.crystalsSixths());
+        gs.message(hexBytes("a6 02 05 03"));
+        gs.message(hexBytes("a6 02 05 06"));
+        assertEquals(9, gs.crystalsSixths());              // 1,5 cristal
+        gs.crystalsCast(7);                                // coute 2 : il en avait donc au moins 2
+        assertEquals(0, gs.crystalsSixths());
+        for (int i = 0; i < 10; i++) gs.message(hexBytes("a6 02 05 06"));
+        assertEquals(GameState.CRYSTAL_MAX, gs.crystalsSixths());   // jamais plus de 5
+        gs.message(hexBytes("a6 02 05 43"));               // -3 envoye par le serveur
+        gs.crystalsCast(4);
+        assertEquals(18, gs.crystalsSixths());
+        gs.crystalsCast(3);                                // cout inconnu : 0
+        gs.message(hexBytes("62 02 00 87 25 0e 4d 00 61 00 72 00 72 00 69 00 6f 00 72 00 05 01"));
+        assertEquals("Crystals ~3 / 5   HP 933", gs.status());
+        assertEquals("4.5", GameState.sixthsRounded(28));
+        assertEquals("0", GameState.sixthsRounded(2));
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();

@@ -125,6 +125,31 @@ public class MainActivity extends Activity implements GameState.Listener {
         optsScroll.addView(opts);
         root.addView(optsScroll);
 
+        // ------------------------------------------------ cout des competences en cristaux
+        LinearLayout costRow = new LinearLayout(this);
+        costRow.setOrientation(LinearLayout.HORIZONTAL);
+        costRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView ct = new TextView(this);
+        ct.setText("Crystal costs ");
+        ct.setTypeface(Typeface.DEFAULT_BOLD);
+        costRow.addView(ct);
+        EditText costs = new EditText(this);
+        costs.setSingleLine(true);
+        costs.setHint("skill=crystals, e.g. 7=2 11=3 12=2");
+        costs.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        costs.setText(prefs.getString("skill_costs", "7=2 11=3 12=2"));
+        gs.setSkillCosts(costs.getText().toString());
+        costs.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable s) {
+                prefs.edit().putString("skill_costs", s.toString()).apply();
+                gs.setSkillCosts(s.toString());
+            }
+        });
+        costRow.addView(costs, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        root.addView(costRow);
+
         // ------------------------------------------------ alerte d'apparition
         TextView at = new TextView(this);
         at.setText("Mob alert");

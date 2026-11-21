@@ -34,6 +34,11 @@ connections as they are and reads the game server stream along the way.
 - **Your character**: damage you take ("Yeti Highguard hits you for 6", in orange), HP and MP when
   the server sends them (potions: "HP: 933", "MP: 164"), and EXP per kill ("+7 EXP (total
   3,513,818)"). Skill crystal gains are shown with Details ("Skill crystals +0.5").
+- **Status line** (top of the mobs panel): "Crystals ~4.5 / 5   HP 933   MP 164". The server sends
+  every crystal gain but never what your skills spend, so set each skill's cost in **Crystal
+  costs** (e.g. `7=2 11=3 12=2`). The estimate corrects itself: it never goes over 5, and casting a
+  skill proves you had at least its cost. HP and MP are the last values the server sent (map
+  change, potion): the game computes damage and regeneration on the phone.
 - **Moves** (checkbox): every movement around you — who moves, from where to where, how far and how
   fast, facing which way ("Roopa #9694a34d (1007,1546) -> (1007,1525), moved 21 in 0.64 s, facing
   north, stopped").
