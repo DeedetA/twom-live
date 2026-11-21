@@ -22,6 +22,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.FrameLayout;
 import java.util.Locale;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -53,15 +54,15 @@ public class MainActivity extends Activity implements GameState.Listener {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         GameState gs = GameState.INSTANCE;
+        prefs = getSharedPreferences(Alerter.PREFS, MODE_PRIVATE);
+        Alerter alerter = Alerter.get(this);
+        alerter.attach();
+        NamesPrefs.attach(this);
+        gs.rawSink = RawRecorder.get(this);          // tout ce qui passe, en mode Raw
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(12), dp(12), dp(12), dp(12));
-
-        SharedPreferences prefs = getSharedPreferences(Alerter.PREFS, MODE_PRIVATE);
-        Alerter alerter = Alerter.get(this);
-        alerter.attach();
-        gs.rawSink = RawRecorder.get(this);          // tout ce qui passe, en mode Raw
 
         TextView credit = new TextView(this);
         credit.setText("Made with love by @Deedet, pm me if issue found.\nPlease don't use it for botting or for macros ❤️");
@@ -72,7 +73,7 @@ public class MainActivity extends Activity implements GameState.Listener {
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(8), 0, dp(4));
+        row.setPadding(0, dp(6), 0, dp(2));
         toggle = new Button(this);
         toggle.setOnClickListener(v -> onToggle());
         row.addView(toggle, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
@@ -86,76 +87,91 @@ public class MainActivity extends Activity implements GameState.Listener {
         row.addView(open, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         root.addView(row);
 
-        LinearLayout opts = new LinearLayout(this);
-        opts.setOrientation(LinearLayout.HORIZONTAL);
-        CheckBox chat = new CheckBox(this);
-        chat.setText("Chat");
-        chat.setChecked(gs.showChat);
-        chat.setOnCheckedChangeListener((c, on) -> gs.showChat = on);
-        opts.addView(chat);
-        CheckBox sent = new CheckBox(this);
-        sent.setText("Sent");
-        sent.setChecked(gs.showSent);
-        sent.setOnCheckedChangeListener((c, on) -> gs.showSent = on);
-        opts.addView(sent);
-        CheckBox details = new CheckBox(this);
-        details.setText("Details");
-        details.setChecked(gs.verbose);
-        details.setOnCheckedChangeListener((c, on) -> gs.verbose = on);
-        opts.addView(details);
-        CheckBox moves = new CheckBox(this);
-        moves.setText("Moves");
-        moves.setChecked(prefs.getBoolean("moves", false));
-        gs.showMoves = moves.isChecked();
-        moves.setOnCheckedChangeListener((c, on) -> {
+        // ------------------------------------------------ onglets
+        LinearLayout tabs = new LinearLayout(this);
+        tabs.setOrientation(LinearLayout.HORIZONTAL);
+        FrameLayout pages = new FrameLayout(this);
+        View[] views = {buildSettings(gs, alerter), buildLog(gs), buildTable(gs)};
+        String[] titles = {"Settings", "Log", "Table"};
+        for (int i = 0; i < 3; i++) {
+            final int n = i;
+            tabButtons[i] = new Button(this);
+            tabButtons[i].setText(titles[i]);
+            tabButtons[i].setAllCaps(false);
+            tabButtons[i].setOnClickListener(v -> showTab(n));
+            tabs.addView(tabButtons[i], new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            pages.addView(views[i], new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+            pageViews[i] = views[i];
+        }
+        root.addView(tabs);
+        root.addView(pages, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        setContentView(root);
+        showTab(prefs.getInt("tab", 1));
+    }
+
+    private final Button[] tabButtons = new Button[3];
+    private final View[] pageViews = new View[3];
+    private int currentTab = 1;
+    private SharedPreferences prefs;
+
+    private void showTab(int n) {
+        currentTab = n;
+        prefs.edit().putInt("tab", n).apply();
+        for (int i = 0; i < 3; i++) {
+            pageViews[i].setVisibility(i == n ? View.VISIBLE : View.GONE);
+            tabButtons[i].setTypeface(null, i == n ? Typeface.BOLD : Typeface.NORMAL);
+            tabButtons[i].setTextColor(i == n ? Color.rgb(21, 101, 192) : Color.rgb(90, 90, 90));
+        }
+        if (n == 2) refreshTable();
+        if (n == 1) logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    private TextView header(String t) {
+        TextView v = new TextView(this);
+        v.setText(t);
+        v.setTypeface(Typeface.DEFAULT_BOLD);
+        v.setTextSize(15);
+        v.setPadding(0, dp(12), 0, dp(2));
+        return v;
+    }
+
+    private CheckBox option(LinearLayout into, String label, String help, boolean on, android.widget.CompoundButton.OnCheckedChangeListener l) {
+        CheckBox c = new CheckBox(this);
+        c.setText(label);
+        c.setChecked(on);
+        c.setOnCheckedChangeListener(l);
+        into.addView(c);
+        if (help != null) {
+            TextView h = new TextView(this);
+            h.setText(help);
+            h.setTextSize(12);
+            h.setTextColor(Color.rgb(110, 110, 110));
+            h.setPadding(dp(32), 0, 0, dp(4));
+            into.addView(h);
+        }
+        return c;
+    }
+
+    // ------------------------------------------------ onglet 1 : reglages
+    private View buildSettings(GameState gs, Alerter alerter) {
+        LinearLayout p = new LinearLayout(this);
+        p.setOrientation(LinearLayout.VERTICAL);
+        p.addView(header("Show in the log"));
+        option(p, "Chat", "Chat messages, yours and other players'", gs.showChat, (c, on) -> gs.showChat = on);
+        option(p, "Sent", "What your phone sends: attacks, skills, items, NPCs", gs.showSent, (c, on) -> gs.showSent = on);
+        option(p, "Details", "Hits, misses, players in view, unnamed stats, diagnostics", gs.verbose, (c, on) -> gs.verbose = on);
+        gs.showMoves = prefs.getBoolean("moves", false);
+        option(p, "Moves", "Every movement around you (about 15 lines per second)", gs.showMoves, (c, on) -> {
             prefs.edit().putBoolean("moves", on).apply();
             gs.showMoves = on;
         });
-        opts.addView(moves);
-        CheckBox rawBox = new CheckBox(this);
-        rawBox.setText("Raw");
-        rawBox.setChecked(prefs.getBoolean("raw", false));
-        gs.raw = rawBox.isChecked();
-        rawBox.setOnCheckedChangeListener((c, on) -> {
+        gs.raw = prefs.getBoolean("raw", false);
+        option(p, "Raw", "Every message in hex, recorded for the Raw file", gs.raw, (c, on) -> {
             prefs.edit().putBoolean("raw", on).apply();
             gs.raw = on;
         });
-        opts.addView(rawBox);
-        android.widget.HorizontalScrollView optsScroll = new android.widget.HorizontalScrollView(this);
-        optsScroll.addView(opts);
-        root.addView(optsScroll);
 
-        // ------------------------------------------------ cout des competences en cristaux
-        LinearLayout costRow = new LinearLayout(this);
-        costRow.setOrientation(LinearLayout.HORIZONTAL);
-        costRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView ct = new TextView(this);
-        ct.setText("Crystal costs ");
-        ct.setTypeface(Typeface.DEFAULT_BOLD);
-        costRow.addView(ct);
-        EditText costs = new EditText(this);
-        costs.setSingleLine(true);
-        costs.setHint("skill=crystals, e.g. 7=2 11=3 12=2");
-        costs.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        costs.setText(prefs.getString("skill_costs", "7=2 11=3 12=2"));
-        gs.setSkillCosts(costs.getText().toString());
-        costs.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
-            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
-            @Override public void afterTextChanged(Editable s) {
-                prefs.edit().putString("skill_costs", s.toString()).apply();
-                gs.setSkillCosts(s.toString());
-            }
-        });
-        costRow.addView(costs, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        root.addView(costRow);
-
-        // ------------------------------------------------ alerte d'apparition
-        TextView at = new TextView(this);
-        at.setText("Mob alert");
-        at.setTypeface(Typeface.DEFAULT_BOLD);
-        at.setPadding(0, dp(6), 0, 0);
-        root.addView(at);
+        p.addView(header("Mob alert"));
         EditText name = new EditText(this);
         name.setSingleLine(true);
         name.setHint("Name to watch (several: Imp, Spector)");
@@ -169,39 +185,32 @@ public class MainActivity extends Activity implements GameState.Listener {
                 gs.setWatch(s.toString());
             }
         });
-        root.addView(name);
-        LinearLayout alertRow = new LinearLayout(this);
-        alertRow.setOrientation(LinearLayout.HORIZONTAL);
-        alertRow.setGravity(Gravity.CENTER_VERTICAL);
-        CheckBox notif = new CheckBox(this);
-        notif.setText("Notification");
-        notif.setChecked(prefs.getBoolean(Alerter.KEY_NOTIF, true));
-        notif.setOnCheckedChangeListener((c, on) -> {
+        p.addView(name);
+        CheckBox notif = option(p, "Notification", null, prefs.getBoolean(Alerter.KEY_NOTIF, true), (c, on) -> {
             prefs.edit().putBoolean(Alerter.KEY_NOTIF, on).apply();
             if (on) askNotificationPermission();
         });
-        alertRow.addView(notif);
-        CheckBox vib = new CheckBox(this);
-        vib.setText("Vibration");
-        vib.setChecked(prefs.getBoolean(Alerter.KEY_VIBRATE, true));
-        vib.setOnCheckedChangeListener((c, on) -> prefs.edit().putBoolean(Alerter.KEY_VIBRATE, on).apply());
-        alertRow.addView(vib);
-        CheckBox voice = new CheckBox(this);
-        voice.setText("Voice");
-        voice.setChecked(prefs.getBoolean(Alerter.KEY_VOICE, false));
-        voice.setOnCheckedChangeListener((c, on) -> prefs.edit().putBoolean(Alerter.KEY_VOICE, on).apply());
-        alertRow.addView(voice);
+        option(p, "Vibration", null, prefs.getBoolean(Alerter.KEY_VIBRATE, true),
+                (c, on) -> prefs.edit().putBoolean(Alerter.KEY_VIBRATE, on).apply());
+        option(p, "Voice", null, prefs.getBoolean(Alerter.KEY_VOICE, false),
+                (c, on) -> prefs.edit().putBoolean(Alerter.KEY_VOICE, on).apply());
         Button test = new Button(this);
-        test.setText("Test");
+        test.setText("Test the alert");
+        test.setAllCaps(false);
         test.setOnClickListener(v -> alerter.fire("Test alert: Imp spawned - 300 north-east",
                 "ID 8ee6a91c at (2267,1240)", "Test alert. Imp spawned, 300 north-east"));
-        alertRow.addView(test);
-        android.widget.HorizontalScrollView alertScroll = new android.widget.HorizontalScrollView(this);
-        alertScroll.addView(alertRow);
-        root.addView(alertScroll);
+        p.addView(test, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         if (notif.isChecked()) askNotificationPermission();
 
+        ScrollView sv = new ScrollView(this);
+        sv.addView(p);
+        return sv;
+    }
 
+    // ------------------------------------------------ onglet 2 : log
+    private View buildLog(GameState gs) {
+        LinearLayout p = new LinearLayout(this);
+        p.setOrientation(LinearLayout.VERTICAL);
         mobs = new TextView(this);
         mobs.setTypeface(Typeface.MONOSPACE);
         mobs.setTextSize(12);
@@ -210,7 +219,7 @@ public class MainActivity extends Activity implements GameState.Listener {
         mobs.setPadding(dp(8), dp(8), dp(8), dp(8));
         ScrollView mobsScroll = new ScrollView(this);
         mobsScroll.addView(mobs);
-        root.addView(mobsScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 2));
+        p.addView(mobsScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 2));
 
         LinearLayout row2 = new LinearLayout(this);
         row2.setOrientation(LinearLayout.HORIZONTAL);
@@ -225,56 +234,18 @@ public class MainActivity extends Activity implements GameState.Listener {
             StringBuilder t = new StringBuilder("=== Log ===\n");
             for (String l : gs.lines()) t.append(l).append('\n');
             t.append("\n=== Events (CSV) ===\n").append(gs.csv());
-            Intent s = new Intent(Intent.ACTION_SEND);
-            s.setType("text/plain");
-            s.putExtra(Intent.EXTRA_SUBJECT, "TWOM Live - log");
-            s.putExtra(Intent.EXTRA_TEXT, t.toString());
-            startActivity(Intent.createChooser(s, "Share the log"));
+            shareText("TWOM Live - log", t.toString(), "Share the log");
         });
         row2.addView(share);
+        Button exportRaw = new Button(this);
+        exportRaw.setText("Raw file");
+        exportRaw.setOnClickListener(v -> shareRaw(exportRaw));
+        row2.addView(exportRaw);
         Button clear = new Button(this);
         clear.setText("Clear");
         clear.setOnClickListener(v -> { gs.reset(); shown.clear(); log.setText(""); RawRecorder.get(this).clear(); });
-        Button exportRaw = new Button(this);
-        exportRaw.setText("Raw file");
-        exportRaw.setOnClickListener(v -> {
-            RawRecorder rec = RawRecorder.get(this);
-            rec.flush();
-            if (rec.size() == 0) {
-                Toast.makeText(this, "Nothing recorded yet: tick Raw, then play", Toast.LENGTH_LONG).show();
-                return;
-            }
-            exportRaw.setEnabled(false);
-            Toast.makeText(this, String.format(Locale.US, "Zipping %.1f MB...", rec.size() / 1048576.0), Toast.LENGTH_SHORT).show();
-            new Thread(() -> {
-                long raw;
-                try {
-                    raw = rec.makeZip();
-                } catch (java.io.IOException e) {
-                    runOnUiThread(() -> {
-                        exportRaw.setEnabled(true);
-                        Toast.makeText(this, "Could not create the zip: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                    });
-                    return;
-                }
-                long zipped = rec.zipFile().length();
-                runOnUiThread(() -> {
-                    exportRaw.setEnabled(true);
-                    Toast.makeText(this, String.format(Locale.US, "%.1f MB zipped to %.1f MB", raw / 1048576.0, zipped / 1048576.0),
-                            Toast.LENGTH_LONG).show();
-                    Intent s = new Intent(Intent.ACTION_SEND);
-                    s.setType("application/zip");
-                    s.putExtra(Intent.EXTRA_STREAM, RawFileProvider.RAW_URI);
-                    s.putExtra(Intent.EXTRA_SUBJECT, "TWOM Live - raw messages");
-                    s.setClipData(android.content.ClipData.newRawUri("raw", RawFileProvider.RAW_URI));
-                    s.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivity(Intent.createChooser(s, "Share the raw file"));
-                });
-            }, "raw-zip").start();
-        });
-        row2.addView(exportRaw);
         row2.addView(clear);
-        root.addView(row2);
+        p.addView(row2);
 
         log = new TextView(this);
         log.setTypeface(Typeface.MONOSPACE);
@@ -282,9 +253,216 @@ public class MainActivity extends Activity implements GameState.Listener {
         log.setTextIsSelectable(true);
         logScroll = new ScrollView(this);
         logScroll.addView(log);
-        root.addView(logScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 3));
+        p.addView(logScroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 3));
+        return p;
+    }
 
-        setContentView(root);
+    private void shareText(String subject, String text, String title) {
+        Intent s = new Intent(Intent.ACTION_SEND);
+        s.setType("text/plain");
+        s.putExtra(Intent.EXTRA_SUBJECT, subject);
+        s.putExtra(Intent.EXTRA_TEXT, text);
+        startActivity(Intent.createChooser(s, title));
+    }
+
+    private void shareRaw(Button exportRaw) {
+        RawRecorder rec = RawRecorder.get(this);
+        rec.flush();
+        if (rec.size() == 0) {
+            Toast.makeText(this, "Nothing recorded yet: tick Raw in Settings, then play", Toast.LENGTH_LONG).show();
+            return;
+        }
+        exportRaw.setEnabled(false);
+        Toast.makeText(this, String.format(Locale.US, "Zipping %.1f MB...", rec.size() / 1048576.0), Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            long raw;
+            try {
+                raw = rec.makeZip();
+            } catch (java.io.IOException e) {
+                runOnUiThread(() -> {
+                    exportRaw.setEnabled(true);
+                    Toast.makeText(this, "Could not create the zip: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                });
+                return;
+            }
+            long zipped = rec.zipFile().length();
+            runOnUiThread(() -> {
+                exportRaw.setEnabled(true);
+                Toast.makeText(this, String.format(Locale.US, "%.1f MB zipped to %.1f MB", raw / 1048576.0, zipped / 1048576.0),
+                        Toast.LENGTH_LONG).show();
+                Intent s = new Intent(Intent.ACTION_SEND);
+                s.setType("application/zip");
+                s.putExtra(Intent.EXTRA_STREAM, RawFileProvider.RAW_URI);
+                s.putExtra(Intent.EXTRA_SUBJECT, "TWOM Live - raw messages");
+                s.setClipData(android.content.ClipData.newRawUri("raw", RawFileProvider.RAW_URI));
+                s.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivity(Intent.createChooser(s, "Share the raw file"));
+            });
+        }, "raw-zip").start();
+    }
+
+    // ------------------------------------------------ onglet 3 : tableau a remplir
+    private Names.Cat tableCat = Names.Cat.SKILL;
+    private LinearLayout tableRows, catBar;
+    private TextView tableInfo;
+    private boolean tableDirty;
+
+    private View buildTable(GameState gs) {
+        LinearLayout p = new LinearLayout(this);
+        p.setOrientation(LinearLayout.VERTICAL);
+        try { tableCat = Names.Cat.valueOf(prefs.getString("table_cat", "SKILL")); } catch (IllegalArgumentException ignored) { }
+
+        catBar = new LinearLayout(this);
+        catBar.setOrientation(LinearLayout.HORIZONTAL);
+        android.widget.HorizontalScrollView cs = new android.widget.HorizontalScrollView(this);
+        cs.addView(catBar);
+        p.addView(cs);
+
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.HORIZONTAL);
+        info.setGravity(Gravity.CENTER_VERTICAL);
+        tableInfo = new TextView(this);
+        tableInfo.setTextSize(12);
+        tableInfo.setTextColor(Color.rgb(90, 90, 90));
+        info.addView(tableInfo, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        Button share = new Button(this);
+        share.setText("Share table");
+        share.setAllCaps(false);
+        share.setOnClickListener(v -> shareText("TWOM Live - table", gs.names.csv(), "Share the table"));
+        info.addView(share);
+        p.addView(info);
+
+        tableRows = new LinearLayout(this);
+        tableRows.setOrientation(LinearLayout.VERTICAL);
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.addView(tableRows);
+        ScrollView vs = new ScrollView(this);
+        vs.addView(hs);
+        p.addView(vs, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        return p;
+    }
+
+    private android.graphics.drawable.GradientDrawable cellBg(int fill) {
+        android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+        d.setColor(fill);
+        d.setStroke(1, Color.rgb(200, 200, 200));
+        return d;
+    }
+
+    private TextView cellText(String t, int width, boolean bold, int fill) {
+        TextView v = new TextView(this);
+        v.setText(t);
+        v.setTextSize(13);
+        if (bold) v.setTypeface(Typeface.DEFAULT_BOLD);
+        v.setPadding(dp(6), dp(8), dp(6), dp(8));
+        v.setBackground(cellBg(fill));
+        v.setLayoutParams(new LinearLayout.LayoutParams(dp(width), LinearLayout.LayoutParams.MATCH_PARENT));
+        return v;
+    }
+
+    private interface Setter { void set(String s); }
+
+    private EditText cellEdit(String t, int width, boolean number, int fill, Setter set) {
+        EditText e = new EditText(this);
+        e.setText(t);
+        e.setTextSize(13);
+        e.setSingleLine(true);
+        e.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        if (number) e.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        e.setPadding(dp(6), dp(6), dp(6), dp(6));
+        e.setBackground(cellBg(fill));
+        e.setLayoutParams(new LinearLayout.LayoutParams(dp(width), LinearLayout.LayoutParams.MATCH_PARENT));
+        e.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable s) {
+                synchronized (GameState.INSTANCE.names) { set.set(s.toString()); }
+                GameState.INSTANCE.names.edited();
+                refreshCatBar();
+            }
+        });
+        return e;
+    }
+
+    private void refreshCatBar() {
+        Names names = GameState.INSTANCE.names;
+        catBar.removeAllViews();
+        for (Names.Cat c : Names.Cat.values()) {
+            Button b = new Button(this);
+            int todo = names.unnamed(c);
+            b.setText(c.title + (todo > 0 ? " (" + todo + ")" : ""));
+            b.setAllCaps(false);
+            b.setTypeface(null, c == tableCat ? Typeface.BOLD : Typeface.NORMAL);
+            b.setTextColor(c == tableCat ? Color.rgb(21, 101, 192) : Color.rgb(90, 90, 90));
+            b.setOnClickListener(v -> {
+                tableCat = c;
+                prefs.edit().putString("table_cat", c.name()).apply();
+                refreshTable();
+            });
+            catBar.addView(b);
+        }
+    }
+
+    private void refreshTable() {
+        tableDirty = false;
+        refreshCatBar();
+        Names names = GameState.INSTANCE.names;
+        java.util.List<Names.Entry> list = names.list(tableCat);
+        boolean skill = tableCat == Names.Cat.SKILL;
+        boolean valued = tableCat == Names.Cat.STAT || tableCat == Names.Cat.BUFF;
+        tableInfo.setText(list.size() + " seen, " + names.unnamed(tableCat) + " without a name (yellow). "
+                + (skill ? "Crystal costs feed the crystal counter." : "Names are used in the log."));
+        tableRows.removeAllViews();
+
+        int head = Color.rgb(225, 232, 242);
+        LinearLayout h = new LinearLayout(this);
+        h.setOrientation(LinearLayout.HORIZONTAL);
+        h.addView(cellText("#", 64, true, head));
+        h.addView(cellText("Name", 170, true, head));
+        if (skill) {
+            h.addView(cellText("Crystals", 80, true, head));
+            h.addView(cellText("Mana", 70, true, head));
+        }
+        if (valued) h.addView(cellText(tableCat == Names.Cat.STAT ? "Last value" : "Duration", 90, true, head));
+        h.addView(cellText("Seen", 56, true, head));
+        h.addView(cellText("Note", 260, true, head));
+        tableRows.addView(h);
+
+        for (Names.Entry e : list) {
+            int fill = e.named() ? Color.WHITE : Color.rgb(255, 248, 214);
+            LinearLayout r = new LinearLayout(this);
+            r.setOrientation(LinearLayout.HORIZONTAL);
+            r.addView(cellText(e.id, 64, false, fill));
+            r.addView(cellEdit(e.name, 170, false, fill, s -> e.name = s));
+            if (skill) {
+                r.addView(cellEdit(e.crystals == 0 ? "" : Names.fmt(e.crystals), 80, true, fill, s -> {
+                    try { e.crystals = s.trim().isEmpty() ? 0 : Double.parseDouble(s.replace(',', '.')); } catch (NumberFormatException ignored) { }
+                }));
+                r.addView(cellEdit(e.mana == 0 ? "" : String.valueOf(e.mana), 70, true, fill, s -> {
+                    try { e.mana = s.trim().isEmpty() ? 0 : Integer.parseInt(s.trim()); } catch (NumberFormatException ignored) { }
+                }));
+            }
+            if (valued) r.addView(cellText(e.last, 90, false, fill));
+            r.addView(cellText(e.seen == 0 ? "" : String.valueOf(e.seen), 56, false, fill));
+            r.addView(cellEdit(e.note, 260, false, fill, s -> e.note = s));
+            tableRows.addView(r);
+        }
+        if (list.isEmpty()) {
+            TextView none = new TextView(this);
+            none.setText("Nothing seen yet: play with Start on, new numbers appear here.");
+            none.setPadding(0, dp(12), 0, 0);
+            tableRows.addView(none);
+        }
+    }
+
+    /** une nouvelle ligne est apparue pendant le jeu */
+    private void onNewName() {
+        ui.post(() -> {
+            if (currentTab != 2) { tableDirty = true; return; }
+            View f = getCurrentFocus();
+            if (f instanceof EditText && tableRows.findFocus() != null) { tableDirty = true; refreshCatBar(); return; }
+            refreshTable();
+        });
     }
 
     @Override
@@ -292,6 +470,8 @@ public class MainActivity extends Activity implements GameState.Listener {
         super.onResume();
         GameState gs = GameState.INSTANCE;
         gs.addListener(this);
+        gs.names.onNew = this::onNewName;
+        if (currentTab == 2) refreshTable();
         shown.clear();
         List<GameState.Line> l = gs.entries();
         for (int i = Math.max(0, l.size() - MAX_LINES); i < l.size(); i++) shown.add(l.get(i));
@@ -303,6 +483,7 @@ public class MainActivity extends Activity implements GameState.Listener {
     @Override
     protected void onPause() {
         GameState.INSTANCE.removeListener(this);
+        GameState.INSTANCE.names.onNew = null;
         super.onPause();
     }
 

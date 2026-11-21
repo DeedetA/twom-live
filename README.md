@@ -35,9 +35,8 @@ connections as they are and reads the game server stream along the way.
   the server sends them (potions: "HP: 933", "MP: 164"), and EXP per kill ("+7 EXP (total
   3,513,818)"). Skill crystal gains are shown with Details ("Skill crystals +0.5").
 - **Status line** (top of the mobs panel): "Crystals ~4.5 / 5   HP 933   MP 164". The server sends
-  every crystal gain but never what your skills spend, so set each skill's cost in **Crystal
-  costs** (e.g. `7=2 11=3 12=2`). The estimate corrects itself: it never goes over 5, and casting a
-  skill proves you had at least its cost. HP and MP are the last values the server sent (map
+  every crystal gain but never what your skills spend, so set each skill's cost in the **Table** tab. The estimate corrects itself: it never goes over 5, and casting a
+  skill proves you had at least its cost. Costs are set in the Table tab (Skills). HP and MP are the last values the server sent (map
   change, potion): the game computes damage and regeneration on the phone.
 - **Mob HP**: read from each mob's data when it comes into view (current and max), then reduced by
   every hit anyone lands on it. Shown in the mobs panel ("Yeti Highguard (2336,2079) HP 1541/1650"),
@@ -46,6 +45,13 @@ connections as they are and reads the game server stream along the way.
 - **Buffs, teleports, equipment**: "Buff #32 started (20 min)", "Buff #132 started (1 min) x3"
   (stacks after kills), "Move speed: 130", "Teleporting to Wingfield Beach (map #5)",
   "You equip item #30010" / "You unequip item #40029".
+- **Three tabs**: **Settings** (what to show in the log, Mob alert and how to be alerted), **Log**
+  (status line, mobs in view and everything that happens) and **Table**.
+- **Table**: a spreadsheet of everything the game only sends as numbers — skills, stats, buffs,
+  maps, items and NPCs. Every number seen while playing is added automatically (unnamed rows in
+  yellow, with the last value and a note of what is already known). Type a name and it is used in
+  the log ("Power Strike (skill #7)", "Crit rate: 5820"); for skills also their crystal and mana
+  costs, which feed the crystal counter. **Share table** sends it as CSV.
 - **Moves** (checkbox): every movement around you — who moves, from where to where, how far and how
   fast, facing which way ("Roopa #9694a34d (1007,1546) -> (1007,1525), moved 21 in 0.64 s, facing
   north, stopped").

@@ -306,22 +306,21 @@ public final class GameState {
     public static final int CRYSTAL_MAX = 30;                 // 5 cristaux, en sixiemes
     private int crystals = CRYSTAL_MAX;
     private boolean crystalsSeen = false;
-    private final Map<Integer, Integer> skillCost = new HashMap<>();   // competence -> cout en sixiemes
     private long hp = -1, mp = -1;
 
-    /** "7=2 11=3 12=2" : competence = cristaux depenses */
-    public synchronized void setSkillCosts(String spec) {
-        skillCost.clear();
+    /** le tableau a remplir (onglet Table) : noms des competences, stats, buffs, maps, objets, PNJ */
+    public final Names names = new Names();
+
+    /** "7=2 11=3 12=2" : competence = cristaux depenses (ancien reglage, recopie dans le tableau) */
+    public void setSkillCosts(String spec) {
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)\\s*=\\s*(\\d+(?:[.,]5)?)").matcher(spec == null ? "" : spec);
-        while (m.find()) {
-            double c = Double.parseDouble(m.group(2).replace(',', '.'));
-            skillCost.put(Integer.parseInt(m.group(1)), (int) Math.round(c * 6));
-        }
+        while (m.find()) names.setCrystals(Integer.parseInt(m.group(1)), Double.parseDouble(m.group(2).replace(',', '.')));
+        names.edited();
     }
 
     synchronized void crystalsCast(int skill) {
-        Integer c = skillCost.get(skill);
-        if (c == null || c == 0) return;
+        int c = names.crystalSixths(skill);
+        if (c == 0) return;
         crystalsSeen = true;
         crystals = Math.max(crystals, c) - c;
     }
@@ -348,17 +347,6 @@ public final class GameState {
         return halves % 2 == 0 ? String.valueOf(halves / 2) : (halves / 2) + ".5";
     }
 
-    // numeros de maps vus dans les captures (message 0x8e et 0x5e)
-    static final Map<Integer, String> MAPS = new HashMap<>();
-    static {
-        MAPS.put(5, "Wingfield Beach");
-        MAPS.put(25, "Forest of Grave");
-    }
-
-    static String mapName(int n) {
-        String s = MAPS.get(n);
-        return s != null ? s + " (map #" + n + ")" : "map #" + n;
-    }
 
     /** 1200000 -> "20 min", 6000 -> "6 s" */
     static String duration(long ms) {
@@ -500,8 +488,9 @@ public final class GameState {
                         log(ENVOYE, "You attack " + (tname != null ? tname : "your target") + " (basic attack)",
                                 new Object[]{"attack_sent", tgt, tname, "", xv[0], yv[0], "basic attack"});
                     } else {
+                        names.see(Names.Cat.SKILL, skill, null);
                         String on = tname != null ? " on " + tname : "";
-                        log(ENVOYE, "You cast skill #" + skill + on + " from (" + xv[0] + "," + yv[0] + ")",
+                        log(ENVOYE, "You cast " + names.label(Names.Cat.SKILL, skill) + on + " from (" + xv[0] + "," + yv[0] + ")",
                                 new Object[]{"skill_sent", tgt, tname, "", xv[0], yv[0], "skill " + skill});
                     }
                     break;
@@ -526,7 +515,8 @@ public final class GameState {
                     int sub = m[1] & 0xff;
                     long[] npc = TwomDecoder.varint(m, 6, false);
                     int i = (int) npc[1];
-                    String who = "NPC #" + npc[0];
+                    names.see(Names.Cat.NPC, npc[0], null);
+                    String who = names.label(Names.Cat.NPC, npc[0]);
                     switch (sub) {
                         case 0x00: log(ENVOYE, "You talk to " + who, null); break;
                         case 0x03: log(ENVOYE, "You close the dialog with " + who, null); break;
@@ -540,10 +530,11 @@ public final class GameState {
                             long item = TwomDecoder.varint(m, i + 1, false)[0];
                             int n = m.length;
                             String qty = (m[n - 1] == 0 && (m[n - 2] & 0x80) == 0) ? " x" + m[n - 2] : "";
-                            String what = "item #" + item + qty + " (bag " + slot / 12 + ", slot " + slot % 12 + ")";
+                            names.see(Names.Cat.ITEM, item, null);
+                            String what = names.label(Names.Cat.ITEM, item) + qty + " (bag " + slot / 12 + ", slot " + slot % 12 + ")";
                             if (sub == 0x0c) log(ENVOYE, "You ask " + who + " the price of " + what, null);
                             else log(ENVOYE, "You sell " + what + " to " + who,
-                                    new Object[]{"item_sold", "", "item #" + item, "", "", "", who});
+                                    new Object[]{"item_sold", "", names.label(Names.Cat.ITEM, item), "", "", "", who});
                             break;
                         }
                         case 0x07: case 0x09: {
@@ -563,13 +554,15 @@ public final class GameState {
                     if (m.length >= 12 && (m[1] == 0x01 || m[1] == 0x03)) {
                         // [a4][01 equiper / 03 retirer][ton ID][00][sac][case][sac][case][objet][caracteristiques]...
                         long item = TwomDecoder.varint(m, 10, false)[0];
-                        if (showSent) log(ENVOYE, (m[1] == 0x01 ? "You equip item #" : "You unequip item #") + item,
-                                new Object[]{m[1] == 0x01 ? "item_equipped" : "item_unequipped", "", "item #" + item, "", "", "", ""});
+                        names.see(Names.Cat.ITEM, item, null);
+                        if (showSent) log(ENVOYE, (m[1] == 0x01 ? "You equip " : "You unequip ") + names.label(Names.Cat.ITEM, item),
+                                new Object[]{m[1] == 0x01 ? "item_equipped" : "item_unequipped", "", names.label(Names.Cat.ITEM, item), "", "", "", ""});
                     } else if (m.length >= 12 && m[1] == 0x0d) {
                         int bag = m[7] & 0xff, slot = m[8] & 0xff;
                         long item = TwomDecoder.varint(m, 9, false)[0];
-                        if (showSent) log(ENVOYE, "You use item #" + item + " (bag " + bag + ", slot " + slot + ")",
-                                new Object[]{"item_used", "", "item #" + item, "", "", "", "bag " + bag + " slot " + slot});
+                        names.see(Names.Cat.ITEM, item, null);
+                        if (showSent) log(ENVOYE, "You use " + names.label(Names.Cat.ITEM, item) + " (bag " + bag + ", slot " + slot + ")",
+                                new Object[]{"item_used", "", names.label(Names.Cat.ITEM, item), "", "", "", "bag " + bag + " slot " + slot});
                     }
                     break;
                 }
@@ -628,7 +621,9 @@ public final class GameState {
                     // [86][01][modele de l'objet]... : un objet arrive dans ton inventaire
                     if (m.length >= 5 && m[1] == 1) {
                         long item = TwomDecoder.varint(m, 2, false)[0];
-                        log(DROP, "You obtained item #" + item, new Object[]{"item_obtained", "", "item #" + item, "", "", "", ""});
+                        names.see(Names.Cat.ITEM, item, null);
+                        String it = names.label(Names.Cat.ITEM, item);
+                        log(DROP, "You obtained " + it, new Object[]{"item_obtained", "", it, "", "", "", ""});
                     }
                     break;
                 case 0x87: {
@@ -643,7 +638,8 @@ public final class GameState {
                             long item = TwomDecoder.varint(m, 3, false)[0];
                             int n = m.length;
                             String qty = (m[n - 1] == 0 && (m[n - 2] & 0x80) == 0) ? " x" + m[n - 2] : "";
-                            log(RECU, "Inventory bag " + bag + ", slot " + slot + ": item #" + item + qty, null);
+                            names.see(Names.Cat.ITEM, item, null);
+                            log(RECU, "Inventory bag " + bag + ", slot " + slot + ": " + names.label(Names.Cat.ITEM, item) + qty, null);
                         }
                     }
                     break;
@@ -652,7 +648,9 @@ public final class GameState {
                     // [8e][numero de map] : le serveur t'envoie sur une autre map
                     if (m.length != 2) break;
                     int map = m[1] & 0xff;
-                    log(SYSTEME, "Teleporting to " + mapName(map), new Object[]{"teleport", "", mapName(map), "", "", "", map});
+                    names.see(Names.Cat.MAP, map, null);
+                    String to = names.label(Names.Cat.MAP, map);
+                    log(SYSTEME, "Teleporting to " + to, new Object[]{"teleport", "", to, "", "", "", map});
                     break;
                 }
                 case 0x57: {
@@ -667,25 +665,30 @@ public final class GameState {
                     // une autre valeur pour les autres (20 pour un consommable, 55 ou 60 pour des competences)
                     int stack = m[i + 16] & 0xff;
                     if (stack > 10) stack = 0;
-                    log(RECU, "Buff #" + b[0] + " started (" + duration(ms) + ")" + (stack > 1 ? " x" + stack : ""),
-                            new Object[]{"buff", "", "buff #" + b[0], "", "", "", ms});
+                    names.see(Names.Cat.BUFF, b[0], duration(ms));
+                    log(RECU, names.Label(Names.Cat.BUFF, b[0]) + " started (" + duration(ms) + ")" + (stack > 1 ? " x" + stack : ""),
+                            new Object[]{"buff", "", names.label(Names.Cat.BUFF, b[0]), "", "", "", ms});
                     break;
                 }
                 case 0x59:
                     // [59][buff] : il se termine
-                    if (verbose && m.length >= 2) log(RECU, "Buff #" + TwomDecoder.varint(m, 1, false)[0] + " ended", null);
+                    if (verbose && m.length >= 2) log(RECU, names.Label(Names.Cat.BUFF, TwomDecoder.varint(m, 1, false)[0]) + " ended", null);
                     break;
                 case 0x5c: {
                     // [5c][groupe][stat][valeur] : 00 00 = tes HP, 02 04 = ta mana, 02 00 = ton EXP total
                     if (m.length < 4) break;
                     int grp = m[1] & 0xff, st = m[2] & 0xff;
                     long v = TwomDecoder.varint(m, 3, false)[0];
+                    names.see(Names.Cat.STAT, grp + "/" + st, String.valueOf(v));
+                    String statName = names.nameOrNull(Names.Cat.STAT, grp + "/" + st);
                     if (grp == 0 && st == 0) {
                         synchronized (this) { hp = v; }
                         log(RECU, "HP: " + v, new Object[]{"hp", "", "", "", "", "", v});
                         mobsChanged();
                     } else if (grp == 1 && st == 2) {
                         log(RECU, "Move speed: " + v, null);
+                    } else if (grp == 3 && statName != null) {
+                        log(RECU, statName + ": " + v, null);
                     } else if (grp == 3 && verbose) {
                         log(RECU, "Stat 3/" + st + " = " + v, null);
                     } else if (grp == 2 && st == 4) {
@@ -726,14 +729,14 @@ public final class GameState {
                     long[] npc = TwomDecoder.varint(m, 2, false);
                     int i = (int) npc[1] + 4;
                     if (sub == 0x0d && i < m.length) {
-                        log(RECU, "NPC #" + npc[0] + " offers " + TwomDecoder.varint(m, i, false)[0] + " gold", null);
+                        log(RECU, names.label(Names.Cat.NPC, npc[0]) + " offers " + TwomDecoder.varint(m, i, false)[0] + " gold", null);
                     } else if (sub == 0x10) {
-                        log(RECU, "Sale to NPC #" + npc[0] + " completed", null);
+                        log(RECU, "Sale to " + names.label(Names.Cat.NPC, npc[0]) + " completed", null);
                     } else if (sub == 0x0b) {
-                        log(RECU, "Purchase from NPC #" + npc[0] + " completed", null);
+                        log(RECU, "Purchase from " + names.label(Names.Cat.NPC, npc[0]) + " completed", null);
                     } else if (sub == 0x01 && verbose) {
                         String[] c = TwomDecoder.parseChat(m);
-                        if (c != null) log(RECU, "NPC #" + npc[0] + " dialog: " + (c[0].isEmpty() ? c[1] : c[0]), null);
+                        if (c != null) log(RECU, names.label(Names.Cat.NPC, npc[0]) + " dialog: " + (c[0].isEmpty() ? c[1] : c[0]), null);
                     }
                     break;
                 }
@@ -806,7 +809,8 @@ public final class GameState {
         e.id = id;
         e.x = (int) xv[0];
         e.y = (int) yv[0];
-        e.name = "item #" + tv[0];
+        names.see(Names.Cat.ITEM, tv[0], null);
+        e.name = names.label(Names.Cat.ITEM, tv[0]);
         synchronized (this) { ents.put(id, e); }
         log(DROP, e.name + " dropped at (" + e.x + "," + e.y + ")" + dropSource(e.x, e.y),
                 new Object[]{"item_dropped", id, e.name, "", e.x, e.y, dropSource(e.x, e.y).replace(" (from ", "").replace(")", "")});
@@ -946,7 +950,7 @@ public final class GameState {
             mobsChanged();
         } else if (e != null && e.name.endsWith("Gold")) {
             log(DROP, e.name + " picked up", new Object[]{"gold_picked_up", id, e.name, "", e.x, e.y, ""});
-        } else if (e != null && e.name.startsWith("item #")) {
+        } else if (e != null && e.name.contains("item #")) {
             log(DROP, e.name + " picked up", new Object[]{"item_picked_up", id, e.name, "", e.x, e.y, ""});
         }
     }

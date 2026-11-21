@@ -633,6 +633,65 @@ public class DecoderTest {
         assertEquals(256, ok);
     }
 
+    @Test
+    public void tableauDesNoms() {
+        Names n = new Names();
+        int[] changes = {0};
+        n.onChange = () -> changes[0]++;
+        // valeurs connues d'avance
+        assertEquals("Wingfield Beach (map #5)", n.label(Names.Cat.MAP, 5));
+        assertEquals("map #7", n.label(Names.Cat.MAP, 7));
+        assertEquals(12, n.crystalSixths(7));
+        // un nouveau numero vu en jeu apparait une seule fois
+        n.see(Names.Cat.SKILL, 3, null);
+        n.see(Names.Cat.SKILL, 3, null);
+        assertEquals(1, changes[0]);
+        assertEquals(2, n.get(Names.Cat.SKILL, "3").seen);
+        // le joueur le nomme
+        n.get(Names.Cat.SKILL, "3").name = "Power Strike";
+        n.get(Names.Cat.SKILL, "3").crystals = 1.5;
+        n.get(Names.Cat.STAT, "3/23").name = "Crit rate, x100";
+        n.get(Names.Cat.ITEM, "130005").note = "tab\there, line\nbreak, \\";
+        assertEquals("Power Strike (skill #3)", n.label(Names.Cat.SKILL, 3));
+        assertEquals(9, n.crystalSixths(3));
+        // ordre numerique, stats "groupe/numero" comprises
+        java.util.List<Names.Entry> st = n.list(Names.Cat.STAT);
+        assertEquals("0/0", st.get(0).id);
+        assertEquals("3/24", st.get(st.size() - 1).id);
+        java.util.List<Names.Entry> sk = n.list(Names.Cat.SKILL);
+        assertEquals("3", sk.get(0).id);
+        // enregistrement et rechargement
+        Names m = new Names();
+        m.load(n.serialize());
+        assertEquals("Power Strike (skill #3)", m.label(Names.Cat.SKILL, 3));
+        assertEquals(9, m.crystalSixths(3));
+        assertEquals("tab\there, line\nbreak, \\", m.get(Names.Cat.ITEM, "130005").note);
+        assertTrue(m.csv().contains("Stats,3/23,\"Crit rate, x100\","));
+        assertTrue(m.csv().contains("Skills,3,Power Strike,1.5,0,"));
+    }
+
+    @Test
+    public void nomsDansLeLog() {
+        GameState gs = GameState.INSTANCE;
+        gs.reset();
+        Names.Entry e;
+        gs.names.see(Names.Cat.BUFF, 32, null);
+        gs.names.get(Names.Cat.BUFF, "32").name = "Strength Potion";
+        gs.names.get(Names.Cat.STAT, "3/23").name = "Crit rate";
+        gs.message(hexBytes("57 20 81 3f 00 00 00 00 00 12 4f 80 00 00 00 00 00 10 7a c0 14 01"));
+        gs.message(hexBytes("5c 03 17 ad 3c"));
+        gs.message(hexBytes("5c 03 18 81 47"));        // stat sans nom : seulement avec Details
+        java.util.List<String> l = gs.lines();
+        String all = String.join("\n", l);
+        assertEquals(all, 2, l.size());
+        assertTrue(all, l.get(0).endsWith("Strength Potion (buff #32) started (20 min)"));
+        assertTrue(all, l.get(1).endsWith("Crit rate: 5820"));
+        assertEquals("199", gs.names.get(Names.Cat.STAT, "3/24").last);
+        assertEquals("20 min", gs.names.get(Names.Cat.BUFF, "32").last);
+        gs.names.get(Names.Cat.BUFF, "32").name = "";
+        gs.names.get(Names.Cat.STAT, "3/23").name = "";
+    }
+
     // ---------------------------------------------------------------- relais
     static final byte[] APP = {10, 0, 0, 2}, SRV = {127, 0, 0, 1};
     final LinkedBlockingQueue<byte[]> q = new LinkedBlockingQueue<>();
